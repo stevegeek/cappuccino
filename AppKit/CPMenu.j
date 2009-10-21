@@ -1492,7 +1492,8 @@ var _CPMenuBarWindowBackgroundColor = nil,
 
 - (id)init
 {
-    var contentRect = [CPPlatform isBrowser] ? [[CPPlatformWindow primaryPlatformWindow] contentBounds] : [[self screen] visibleFrame];
+    // This only shows up in browser land, so don't bother calculating metrics in desktop.
+    var contentRect = [[CPPlatformWindow primaryPlatformWindow] contentBounds];
 
     contentRect.size.height = MENUBAR_HEIGHT;
 
