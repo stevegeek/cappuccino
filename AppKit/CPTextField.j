@@ -269,8 +269,8 @@ CPTextFieldStatePlaceholder = CPThemeState("placeholder");
 
                 if (aDOMEvent && aDOMEvent.keyCode == CPReturnKeyCode)
                 {
-                    [owner sendAction:[owner action] to:[owner target]];    
-                    [[owner window] makeFirstResponder:nil];
+                    [owner sendAction:[owner action] to:[owner target]];
+                    [owner selectText:nil];
                 }
                 else if (aDOMEvent && aDOMEvent.keyCode == CPTabKeyCode)
                 {
@@ -597,14 +597,14 @@ CPTextFieldStatePlaceholder = CPThemeState("placeholder");
 
     window.setTimeout(function() 
     { 
-        element.value = [self stringValue];
         element.focus();
         CPTextFieldInputOwner = self;
     }, 0.0);
  
     //post CPControlTextDidBeginEditingNotification
     [self textDidBeginEditing:[CPNotification notificationWithName:CPControlTextDidBeginEditingNotification object:self userInfo:nil]];
-    
+    element.value = [self stringValue];
+
     [[[self window] platformWindow] _propagateCurrentDOMEvent:YES];
     
     CPTextFieldInputIsActive = YES;
@@ -665,6 +665,9 @@ CPTextFieldStatePlaceholder = CPThemeState("placeholder");
 
     //post CPControlTextDidEndEditingNotification
     [self textDidEndEditing:[CPNotification notificationWithName:CPControlTextDidEndEditingNotification object:self userInfo:nil]];
+
+    if ([self sendsActionOnEndEditing])
+        [self sendAction:[self action] to:[self target]];    
 
     return YES;
 }
@@ -951,14 +954,7 @@ var secureStringForString = function(aString)
     // This is true for when aString === "" and null/undefined.
     if (!aString)
         return "";
-
-    var secureString = "",
-        length = aString.length;
-
-    while (length--)
-        secureString += CPSecureTextFieldCharacter;
-
-    return secureString;
+    return Array(aString.length).join(CPSecureTextFieldCharacter);
 }
 
 
