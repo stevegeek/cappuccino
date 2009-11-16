@@ -1510,6 +1510,8 @@ CPTexturedBackgroundWindowMask
     _isDocumentEdited = isDocumentEdited;
     
     [CPMenu _setMenuBarIconImageAlphaValue:_isDocumentEdited ? 0.5 : 1.0];
+
+    [_windowView setDocumentEdited:isDocumentEdited];
 }
 
 /*!
@@ -1643,33 +1645,33 @@ CPTexturedBackgroundWindowMask
 
         [documents[index] shouldCloseWindowController:_windowController 
                                              delegate:self 
-                                  shouldCloseSelector:@selector(_document:shouldClose:contextInfo:)
-                                          contextInfo:index];
+                                  shouldCloseSelector:@selector(_windowControllerContainingDocument:shouldClose:contextInfo:)
+                                          contextInfo:{documents:[documents copy], visited:0, index:index}];
     }
     else
         [self close];
 }
 
-- (void)_document:(CPDocument)document shouldClose:(BOOL)shouldClose contextInfo:(Object)context
+- (void)_windowControllerContainingDocument:(CPDocument)document shouldClose:(BOOL)shouldClose contextInfo:(Object)context
 {
     if (shouldClose)
     {
         var windowController = [self windowController],
-            documents = [windowController documents];
+            documents = context.documents,
+            count = [documents count],
+            visited = ++context.visited,
+            index = ++context.index % count;
 
-        [documents[context] close];
+        [document removeWindowController:windowController];
 
-        var count = [documents count];
-        if (count)
+        if (visited < count)
         {
-            var index = context % count;
-
             [windowController setDocument:documents[index]];
 
             [documents[index] shouldCloseWindowController:_windowController 
                                                  delegate:self 
-                                      shouldCloseSelector:@selector(_document:shouldClose:contextInfo:)
-                                              contextInfo:index];
+                                      shouldCloseSelector:@selector(_windowControllerContainingDocument:shouldClose:contextInfo:)
+                                              contextInfo:context];
         }
         else
             [self close];
@@ -1682,9 +1684,9 @@ CPTexturedBackgroundWindowMask
 */
 - (void)close
 {
-   [[CPNotificationCenter defaultCenter] postNotificationName:CPWindowWillCloseNotification object:self];
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPWindowWillCloseNotification object:self];
 
-   [self orderOut:nil];
+    [self orderOut:nil];
 }
 
 // Managing Main Status
@@ -1994,10 +1996,19 @@ CPTexturedBackgroundWindowMask
     return NO;
 }
 
-- (void)keyDown:(CPEvent)event
+- (void)performKeyEquivalent:(CPEvent)anEvent
 {
-    if (![self performKeyEquivalent:event])
-        [self interpretKeyEvents:[event]];
+    // FIXME: should we be starting at the root, in other words _windowView?
+    // The evidence seems to point to no...
+    return [[self contentView] performKeyEquivalent:anEvent];
+}
+
+- (void)keyDown:(CPEvent)anEvent
+{
+    // It's not clear why we do performKeyEquivalent again here...
+    // Perhaps to allow something to happen between sendEvent: and keyDown:?
+    if (![anEvent _couldBeKeyEquivalent] || ![self performKeyEquivalent:anEvent])
+        [self interpretKeyEvents:[anEvent]];
 }
 
 - (void)insertNewline:(id)sender
