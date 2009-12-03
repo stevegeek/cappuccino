@@ -10,19 +10,28 @@ var SYSTEM = require("system");
 function gen(/*va_args*/)
 {
     var index = 0,
-        count = arguments.length,
 
         shouldSymbolicallyLink = false,
         justFrameworks = false,
         noConfig = false,
         force = false,
-        
+
         template = "Application",
         destination = "";
 
-    for (; index < count; ++index)
+    for (; index < arguments.length; ++index)
     {
         var argument = arguments[index];
+
+        if (argument && !argument.search(/^-[\w\d]{2}$/))
+        {
+            var i = argument.length - 1;
+            for (; i > 1; i--)
+            {
+                Array.prototype.splice.call(arguments, index + 1, 0, "-" + argument.charAt(i));
+            }
+            argument = "-" + argument.charAt(1);
+        }
 
         switch (argument)
         {
@@ -33,7 +42,7 @@ function gen(/*va_args*/)
             case "-t":
             case "--template":      template = arguments[++index];
                                     break;
-                                
+
             case "-f":
             case "--frameworks":    justFrameworks = true;
                                     break;
@@ -56,12 +65,12 @@ function gen(/*va_args*/)
         sourceTemplate = new java.io.File(template);
     else
         sourceTemplate = new java.io.File(OBJJ_HOME + "/lib/capp/Resources/Templates/" + template);
-    
+
     var configFile = File.join(sourceTemplate, "template.config"),
         config = {};
     if (File.isFile(configFile))
         config = JSON.parse(File.read(configFile));
-    
+
     var destinationProject = new java.io.File(destination),
         configuration = noConfig ? [Configuration defaultConfiguration] : [Configuration userConfiguration];
 
@@ -112,27 +121,27 @@ function gen(/*va_args*/)
 function createFrameworksInFile(/*String*/ aFile, /*Boolean*/ symlink, /*Boolean*/ force)
 {
     var destination = FILE.path(aFile);
-    
+
     if (!destination.isDirectory())
         throw new Error("Can't create Frameworks. Directory does not exist: " + destination);
-    
+
     if (symlink && !(SYSTEM.env["CAPP_BUILD"] || SYSTEM.env["STEAM_BUILD"]))
         throw "CAPP_BUILD or STEAM_BUILD must be defined";
 
     var installedFrameworks = FILE.path(FILE.join(OBJJ.OBJJ_HOME, "lib", "Frameworks")),
         builtFrameworks = FILE.path(SYSTEM.env["CAPP_BUILD"] || SYSTEM.env["STEAM_BUILD"]);
-    
+
     var sourceFrameworks = symlink ? builtFrameworks.join("Release") : installedFrameworks,
         sourceDebugFrameworks = symlink ? builtFrameworks.join("Debug") : installedFrameworks.join("Debug");
-        
+
     var destinationFrameworks = destination.join("Frameworks"),
         destinationDebugFrameworks = destination.join("Frameworks", "Debug");
-    
+
     print("Creating Frameworks directory in " + destinationFrameworks + ".");
-    
+
     //destinationFrameworks.mkdirs(); // redundant
     destinationDebugFrameworks.mkdirs();
-    
+
     ["Objective-J", "Foundation", "AppKit"].forEach(function(framework) {
         installFramework(
             sourceFrameworks.join(framework),
