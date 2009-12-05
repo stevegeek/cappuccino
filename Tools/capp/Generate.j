@@ -23,7 +23,7 @@ function gen(/*va_args*/)
     {
         var argument = arguments[index];
 
-        if (argument && !argument.search(/^-[\w\d]{2}$/))
+        if (argument && !argument.search(/^-[\w\d]{2,}$/))
         {
             var i = argument.length - 1;
             for (; i > 1; i--)
