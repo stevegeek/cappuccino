@@ -25,18 +25,13 @@
 @import "CPColor.j"
 @import "CPFont.j"
 @import "CPImage.j"
-@import "CPTextField.j"
 @import "CPView.j"
+@import "CPControl.j"
 
 #include "CoreGraphics/CGGeometry.h"
 
 #include "Platform/Platform.h"
 #include "Platform/DOM/CPDOMDisplayServer.h"
-
-
-CPTopVerticalTextAlignment      = 1,
-CPCenterVerticalTextAlignment   = 2,
-CPBottomVerticalTextAlignment   = 3;
 
 var _CPimageAndTextViewFrameSizeChangedFlag         = 1 << 0,
     _CPImageAndTextViewImageChangedFlag             = 1 << 1,
@@ -285,11 +280,26 @@ var HORIZONTAL_MARGIN   = 3.0,
 {
     if (_image == anImage)
         return;
-    
+
+    if ([_image delegate] === self)
+        [_image setDelegate:nil];
+
     _image = anImage;
     _flags |= _CPImageAndTextViewImageChangedFlag;
-    
+
+    if ([_image loadStatus] !== CPImageLoadStatusCompleted)
+        [_image setDelegate:self];
+
     [self setNeedsLayout];
+}
+
+- (void)imageDidLoad:(id)anImage
+{
+    if (anImage === _image)
+    {
+        _flags |= _CPImageAndTextViewImageChangedFlag;
+        [self setNeedsLayout];
+    }
 }
 
 - (CPImage)image
@@ -340,7 +350,7 @@ var HORIZONTAL_MARGIN   = 3.0,
             
             textStyle.position = "absolute";
             textStyle.whiteSpace = "pre";
-            textStyle.cursor = "default";
+
             textStyle.zIndex = 200;
             textStyle.overflow = "hidden";
     
@@ -376,7 +386,8 @@ var HORIZONTAL_MARGIN   = 3.0,
             shadowStyle.font = [_font ? _font : [CPFont systemFontOfSize:12.0] cssString];
             shadowStyle.position = "absolute";
             shadowStyle.whiteSpace = textStyle.whiteSpace;
-            shadowStyle.cursor = "default";
+            shadowStyle.color = [_textShadowColor cssString];
+
             shadowStyle.zIndex = 150;
             shadowStyle.textOverflow = textStyle.textOverflow;
             

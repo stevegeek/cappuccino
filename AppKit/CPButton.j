@@ -28,28 +28,6 @@
 #include "CoreGraphics/CGGeometry.h"
 
 
-CPScaleProportionally   = 0;
-CPScaleToFit            = 1;
-CPScaleNone             = 2;
-
-
-/* @group CPCellImagePosition */
-
-CPNoImage       = 0;
-CPImageOnly     = 1;
-CPImageLeft     = 2;
-CPImageRight    = 3;
-CPImageBelow    = 4;
-CPImageAbove    = 5;
-CPImageOverlaps = 6;
-
-
-/*  @group CPButtonState */
-
-CPOnState                       = 1;
-CPOffState                      = 0;
-CPMixedState                    = -1;
-
 /* @group CPBezelStyle */
 
 CPRoundedBezelStyle             = 1;
@@ -145,7 +123,7 @@ CPButtonStateMixed  = CPThemeState("mixed");
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjects:[_CGInsetMakeZero(), _CGInsetMakeZero(), nil]
+    return [CPDictionary dictionaryWithObjects:[_CGInsetMakeZero(), _CGInsetMakeZero(), [CPNull null]]
                                        forKeys:[@"bezel-inset", @"content-inset", @"bezel-color"]];
 }
 
@@ -192,8 +170,8 @@ CPButtonStateMixed  = CPThemeState("mixed");
 
     _allowsMixedState = aFlag;
 
-    if (!_allowsMixedState)
-        [self unsetThemeState:CPButtonStateMixed];
+    if (!_allowsMixedState && [self state] === CPMixedState)
+        [self setState:CPOnState];
 }
 
 - (void)setObjectValue:(id)anObjectValue
@@ -460,7 +438,7 @@ CPButtonStateMixed  = CPThemeState("mixed");
     return bounds;
 }
 
-- (CGRect)bezelRectForBounds:(CFRect)bounds
+- (CGRect)bezelRectForBounds:(CGRect)bounds
 {
     if (![self isBordered])
         return _CGRectMakeZero();
