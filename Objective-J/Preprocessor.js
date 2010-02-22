@@ -3,7 +3,7 @@
  * Objective-J
  *
  * Created by Francisco Tolmasky.
- * Copyright 2008, 280 North, Inc.
+ * Copyright 2008-2010, 280 North, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,9 +19,6 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-var OBJJ_PREPROCESSOR_DEBUG_SYMBOLS = 1 << 0,
-    OBJJ_PREPROCESSOR_TYPE_SIGNATURES = 1 << 1;
 
 var TOKEN_ACCESSORS         = "accessors",
     TOKEN_CLASS             = "class",
@@ -64,10 +61,10 @@ var TOKEN_ACCESSORS         = "accessors",
     
 #define IS_WORD(token) /^\w+$/.test(token)
 
-// FIXME: Used fixed regex
 function Lexer(/*String*/ aString)
 {
     this._index = -1;
+    // FIXME: Used fixed regex
     this._tokens = (aString + '\n').match(/\/\/.*(\r|\n)?|\/\*(?:.|\n|\r)*?\*\/|\w+\b|[+-]?\d+(([.]\d+)*([eE][+-]?\d+))?|"[^"\\]*(\\[\s\S][^"\\]*)*"|'[^'\\]*(\\[\s\S][^'\\]*)*'|\s+|./g);
     this._context = [];
     
@@ -128,6 +125,8 @@ Lexer.prototype.skip_whitespace= function(shouldMoveBackwards)
     return token;
 }
 
+exports.Lexer = Lexer;
+
 #define IS_NOT_EMPTY(buffer) buffer.atoms.length !== 0
 #define CONCAT(buffer, atom) buffer.atoms[buffer.atoms.length] = atom
 
@@ -141,12 +140,17 @@ StringBuffer.prototype.toString = function()
     return this.atoms.join("");
 }
 
-function preprocess(/*String*/ aString, /*String*/ aPath, /*unsigned*/ flags)
+exports.preprocess = function(/*String*/ aString, /*String*/ aPath, /*unsigned*/ flags)
 {
     return new Preprocessor(aString, aPath, flags).executable();
 }
 
-function Preprocessor(/*String*/ aString, /*String*/ aPath, /*unsigned*/ flags)
+exports.eval = function(/*String*/ aString)
+{
+    return eval(exports.preprocess(aString).code());
+}
+
+var Preprocessor = function(/*String*/ aString, /*String*/ aPath, /*unsigned*/ flags)
 {
     // Remove the shebang.
     aString = aString.replace(/^#[^\n]+\n/, "\n");
@@ -169,6 +173,13 @@ function Preprocessor(/*String*/ aString, /*String*/ aPath, /*unsigned*/ flags)
 
     this.preprocess(this._tokens, this._buffer);
 }
+
+exports.Preprocessor = Preprocessor;
+
+Preprocessor.Flags = { };
+
+Preprocessor.Flags.IncludeDebugSymbols      = 1 << 0;
+Preprocessor.Flags.IncludeTypeSignatures    = 1 << 1;
 
 Preprocessor.prototype.executable = function()
 {
@@ -310,108 +321,12 @@ Preprocessor.prototype.directive = function(tokens, aStringBuffer, allowedDirect
     else if (token === TOKEN_IMPORT)
         this._import(tokens);
 
-    else if (token === TOKEN_EACH)
-        this.each(tokens, buffer);
-
     // @selector
     else if (token === TOKEN_SELECTOR)
         this.selector(tokens, buffer);
     
     if (!aStringBuffer)
         return buffer;
-}
-
-var fastEnumeratorCount = 0;
-
-Preprocessor.prototype.each = function(tokens, /*StringBuffer*/ aStringBuffer)
-{
-    var token = tokens.skip_whitespace();
-
-    // If we reach an open parenthesis, we are declaring a category.
-    if (token !== TOKEN_OPEN_PARENTHESIS)
-       throw new SyntaxError(this.error_message("*** Expecting (, found: \"" + token + "\"."));
-
-    var identifiers = [],
-        isVared = NO;
-
-    do
-    {
-        token = tokens.skip_whitespace();
-
-        if (identifiers.length === 0 && token === TOKEN_VAR)
-        {
-            isVared = YES;
-
-            token = tokens.skip_whitespace();
-        }
-
-        if (!TOKEN_IDENTIFIER.test(token))
-            throw new SyntaxError(this.error_message("*** Expecting identifier, found: \"" + token + "\"."));
-
-        identifiers.push(token);
-
-        token = tokens.skip_whitespace();
-
-        if (token !== TOKEN_COMMA && token !== TOKEN_IN)
-            throw new SyntaxError(this.error_message("*** Expecting \",\", found: \"" + token + "\"."));
-
-    } while (token && token === TOKEN_COMMA);
-
-    if (token !== TOKEN_IN)
-        throw new SyntaxError(this.error_message("*** Expecting \"in\", found: \"" + token + "\"."));
-
-    var generatedFastEnumeratorName = "$OBJJ_GENERATED_FAST_ENUMERATOR_" + fastEnumeratorCount++;
-
-    CONCAT(aStringBuffer, "var ");
-    CONCAT(aStringBuffer, generatedFastEnumeratorName);
-    CONCAT(aStringBuffer, " = new objj_fastEnumerator(");
-
-    this.preprocess(tokens, aStringBuffer, TOKEN_CLOSE_PARENTHESIS, TOKEN_OPEN_PARENTHESIS);
-
-    CONCAT(aStringBuffer, ", ");
-    CONCAT(aStringBuffer, identifiers.length);
-    CONCAT(aStringBuffer, ");\n");
-
-    // var $E = new objj_fastEnumerator(expression);
-    // for ([[var] arg1[, arg2[, ... argN]]];
-    // $E.i < $E.l || $E.e() && ((arg1 = $E.o0[$E.i][, $E.o1[$E.i][, ... $E.oN[$E.i]]]) || YES);
-    // ++$E.i)
-
-    CONCAT(aStringBuffer, "for (");
-
-    if (isVared)
-    {
-        CONCAT(aStringBuffer, "var ");
-        CONCAT(aStringBuffer, identifiers.join(", "));
-    }
-
-    CONCAT(aStringBuffer, ";(");
-    CONCAT(aStringBuffer, generatedFastEnumeratorName);
-    CONCAT(aStringBuffer, ".i < ");
-    CONCAT(aStringBuffer, generatedFastEnumeratorName);
-    CONCAT(aStringBuffer, ".l || ");
-    CONCAT(aStringBuffer, generatedFastEnumeratorName);
-    CONCAT(aStringBuffer, ".e()) && ((");
-
-    // Man don't you wish we had fast enumeration here!!
-    for (var index = 0, count = identifiers.length; index < count; ++index)
-    {
-        CONCAT(aStringBuffer, identifiers[index]);
-        CONCAT(aStringBuffer, " = ");
-        CONCAT(aStringBuffer, generatedFastEnumeratorName);
-        CONCAT(aStringBuffer, ".o");
-        CONCAT(aStringBuffer, index);
-        CONCAT(aStringBuffer, "[");
-        CONCAT(aStringBuffer, generatedFastEnumeratorName);
-        CONCAT(aStringBuffer, ".i]");
-
-        if (index + 1 < count)
-            CONCAT(aStringBuffer, ", ");
-    }
-
-    CONCAT(aStringBuffer, ") || YES); ++");
-    CONCAT(aStringBuffer, generatedFastEnumeratorName);
-    CONCAT(aStringBuffer, ".i)");
 }
 
 Preprocessor.prototype.implementation = function(tokens, /*StringBuffer*/ aStringBuffer)
@@ -716,7 +631,7 @@ Preprocessor.prototype.method = function(/*Lexer*/ tokens)
 
     this._currentSelector = selector;
 
-    if (this._flags & OBJJ_PREPROCESSOR_DEBUG_SYMBOLS)
+    if (this._flags & Preprocessor.Flags.IncludeDebugSymbols)
         CONCAT(buffer, " $" + this._currentClass + "__" + selector.replace(/:/g, "_"));
     
     CONCAT(buffer, "(self, _cmd");
@@ -730,8 +645,8 @@ Preprocessor.prototype.method = function(/*Lexer*/ tokens)
     CONCAT(buffer, ")\n{ with(self)\n{");
     CONCAT(buffer, this.preprocess(tokens, NULL, TOKEN_CLOSE_BRACE, TOKEN_OPEN_BRACE));
     CONCAT(buffer, "}\n}");
-    // TODO: actually use OBJJ_PREPROCESSOR_TYPE_SIGNATURES flag instead of tying to OBJJ_PREPROCESSOR_DEBUG_SYMBOLS
-    if (this._flags & OBJJ_PREPROCESSOR_DEBUG_SYMBOLS) //OBJJ_PREPROCESSOR_TYPE_SIGNATURES)
+    // TODO: actually use Flags.IncludeTypeSignatures flag instead of tying to Flags.IncludeDebugSymbols
+    if (this._flags & Preprocessor.Flags.IncludeDebugSymbols) //flags.IncludeTypeSignatures)
         CONCAT(buffer, ","+JSON.stringify(types));
     CONCAT(buffer, ")");
 
@@ -997,7 +912,3 @@ Preprocessor.prototype.error_message = function(errorMessage)
                                 (this._currentClass ? " Class: "+this._currentClass : "") +
                                 (this._currentSelector ? " Method: "+this._currentSelector : "") +">";
 }
-
-exports.Lexer = Lexer;
-exports.Preprocessor = Preprocessor;
-exports.preprocess = preprocess;

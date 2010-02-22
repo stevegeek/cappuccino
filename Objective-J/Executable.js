@@ -44,6 +44,8 @@ function Executable(/*String*/ aCode, /*Array*/ fileDependencies, /*String*/ aSc
     this.setCode(aCode);
 }
 
+exports.Executable = Executable;
+
 Executable.prototype.path = function()
 {
     return FILE.join(FILE.cwd(), "(Anonymous)");
@@ -64,10 +66,7 @@ Executable.prototype.functionParameters = function()
 
 Executable.prototype.functionArguments = function()
 {
-    var dirname = FILE.dirname(this.path()),
-        functionArguments = [global, exports.fileExecuterForPath(dirname), fileImporterForPath(dirname)];
-
-//functionArguments = exportedValues().concat(exports.fileExecuterForPath(path), fileImporterForPath(path));
+    var functionArguments = [global, this.fileExecuter(), this.fileImporter()];
 
 #ifdef COMMONJS
     functionArguments = functionArguments.concat(Executable.commonJSArguments());
@@ -193,24 +192,28 @@ Executable.prototype.loadFileDependencies = function()
     this._fileDependencyLoadStatus = ExecutableLoadingFileDependencies;
 
     var searchedPaths = [{ }, { }],
-        foundExecutablePaths = { },
         fileExecutableSearches = new CFMutableDictionary(),
         incompleteFileExecutableSearches = new CFMutableDictionary(),
-        executablesNeedingEventDispatch = [this];
+        loadingExecutables = { };
 
     function searchForFileDependencies(/*Executable*/ anExecutable)
     {
-        if (anExecutable.hasLoadedFileDependencies())
-            return;
-
         var executables = [anExecutable],
             executableIndex = 0,
             executableCount = executables.length;
 
         for (; executableIndex < executableCount; ++executableIndex)
         {
-            var executable = executables[executableIndex],
-                cwd = FILE.dirname(executable.path()),
+            var executable = executables[executableIndex];
+
+            if (executable.hasLoadedFileDependencies())
+                continue;
+
+            var executablePath = executable.path();
+
+            loadingExecutables[executablePath] = executable;
+
+            var cwd = FILE.dirname(executablePath),
                 fileDependencies = executable.fileDependencies(),
                 fileDependencyIndex = 0,
                 fileDependencyCount = fileDependencies.length;
@@ -236,10 +239,7 @@ Executable.prototype.loadFileDependencies = function()
 
                 if (fileExecutableSearch.isComplete())
                 {
-                    var newFileExecutable = fileExecutableSearch.result();
-
-                    foundExecutablePaths[newFileExecutable.path()] = executable;
-                    executables.push(newFileExecutable);
+                    executables.push(fileExecutableSearch.result());
                     ++executableCount;
                 }
 
@@ -249,13 +249,11 @@ Executable.prototype.loadFileDependencies = function()
 
                     fileExecutableSearch.addEventListener("complete", function( anEvent)
                     {
-                        var fileExecutableSearch = anEvent.fileExecutableSearch,
-                            fileExecutable = fileExecutableSearch.result();
+                        var fileExecutableSearch = anEvent.fileExecutableSearch;
 
-                        foundExecutablePaths[fileExecutable.path()] = fileExecutable;
                         incompleteFileExecutableSearches.removeValueForKey(fileExecutableSearch.UID());
 
-                        searchForFileDependencies(fileExecutable);
+                        searchForFileDependencies(fileExecutableSearch.result());
                     });
                 }
             }
@@ -274,31 +272,21 @@ Executable.prototype.loadFileDependencies = function()
         CPLog("DEPENDENCY: Ended");
 #endif
 
-        for (var executablePath in foundExecutablePaths)
-            if (hasOwnProperty.apply(foundExecutablePaths, [executablePath]))
-            {
-                var fileExecutable = new FileExecutable(executablePath);
-                //CPLog("no go for... " + fileExecutable.path());
-                if (fileExecutable.hasLoadedFileDependencies())
-                    continue;
+        for (var path in loadingExecutables)
+            if (hasOwnProperty.call(loadingExecutables, path))
+                loadingExecutables[path]._fileDependencyLoadStatus = ExecutableLoadedFileDependencies;
 
-                executablesNeedingEventDispatch.push(fileExecutable);
-                fileExecutable._fileDependencyLoadStatus = FileExecutableLoadedDependencies;
+        for (var path in loadingExecutables)
+            if (hasOwnProperty.call(loadingExecutables, path))
+            {
+                var executable = loadingExecutables[path];
+
+                executable._eventDispatcher.dispatchEvent(
+                {
+                    type:"dependenciesload",
+                    executable:executable
+                });
             }
-
-        var index = 0,
-            count = executablesNeedingEventDispatch.length;
-
-        for (; index < count; ++index)
-        {
-            var fileExecutable = executablesNeedingEventDispatch[index];
-
-            fileExecutable._eventDispatcher.dispatchEvent(
-            {
-                type:"dependenciesload",
-                fileExecutable:fileExecutable
-            });
-        }
     }
 
     searchForFileDependencies(this);
@@ -314,4 +302,107 @@ Executable.prototype.removeEventListener = function(/*String*/ anEventName, /*Fu
     this._eventDispatcher.removeEventListener(anEventName, aListener);
 }
 
-exports.Executable = Executable;
+function importablePath(/*String*/ aPath, /*BOOL*/ isLocal, /*String*/ aCWD)
+{
+    aPath = FILE.normal(aPath);
+
+    if (FILE.isAbsolute(aPath))
+        return aPath;
+
+    if (isLocal)
+        aPath = FILE.normal(FILE.join(aCWD, aPath));
+
+    return aPath;
+}
+
+Executable.prototype.fileImporter = function()
+{
+    return Executable.fileImporterForPath(FILE.dirname(this.path()));
+}
+
+Executable.prototype.fileExecuter = function()
+{
+    return Executable.fileExecuterForPath(FILE.dirname(this.path()));
+}
+
+var cachedFileExecutersForPaths = { };
+
+Executable.fileExecuterForPath = function(/*String*/ referencePath)
+{
+    referencePath = FILE.normal(referencePath);
+
+    var fileExecuter = cachedFileExecutersForPaths[referencePath];
+
+    if (!fileExecuter)
+    {
+        fileExecuter = function(/*String*/ aPath, /*BOOL*/ isLocal, /*BOOL*/ shouldForce)
+        {
+            aPath = importablePath(aPath, isLocal, referencePath);
+
+            var fileExecutableSearch = new FileExecutableSearch(aPath, isLocal),
+                fileExecutable = fileExecutableSearch.result();
+
+            if (0 && !fileExecutable.hasLoadedFileDependencies())
+                throw "No executable loaded for file at path " + aPath;
+
+            fileExecutable.execute(shouldForce);
+        }
+
+        cachedFileExecutersForPaths[referencePath] = fileExecuter;
+    }
+
+    return fileExecuter;
+}
+
+var cachedImportersForPaths = { };
+
+Executable.fileImporterForPath = function(/*String*/ referencePath)
+{
+    referencePath = FILE.normal(referencePath);
+
+    var cachedImporter = cachedImportersForPaths[referencePath];
+
+    if (!cachedImporter)
+    {
+        cachedImporter = function(/*String*/ aPath, /*BOOL*/ isLocal, /*Function*/ aCallback)
+        {
+            aPath = importablePath(aPath, isLocal, referencePath);
+
+            var fileExecutableSearch = new FileExecutableSearch(aPath, isLocal);
+
+            function searchComplete(/*FileExecutableSearch*/ aFileExecutableSearch)
+            {
+                var fileExecutable = aFileExecutableSearch.result(),
+                    fileExecuter = Executable.fileExecuterForPath(referencePath),
+                    executeAndCallback = function ()
+                    {
+                        fileExecuter(aPath, isLocal);
+
+                        if (aCallback)
+                            aCallback();
+                    }
+
+                if (!fileExecutable.hasLoadedFileDependencies())
+                {
+                    fileExecutable.addEventListener("dependenciesload", executeAndCallback);
+                    fileExecutable.loadFileDependencies();
+                }
+                else
+                    executeAndCallback();
+            }
+
+            if (fileExecutableSearch.isComplete())
+                searchComplete(fileExecutableSearch);
+            else
+                fileExecutableSearch.addEventListener("complete", function(/*Event*/ anEvent)
+                {
+                    searchComplete(anEvent.fileExecutableSearch);
+                });
+        }
+
+        cachedImportersForPaths[referencePath] = cachedImporter;
+    }
+
+    return cachedImporter;
+}
+

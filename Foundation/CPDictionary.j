@@ -348,6 +348,9 @@
 */
 - (BOOL)isEqualToDictionary:(CPDictionary)aDictionary
 {
+    if (self === aDictionary)
+        return YES;
+
     var count = [self count];
 
     if (count !== [aDictionary count])
@@ -371,6 +374,17 @@
     }
 
     return YES;
+}
+
+- (BOOL)isEqual:(id)anObject
+{
+    if (self === anObject)
+        return YES;
+
+    if (![anObject isKindOfClass:[CPDictionary class]])
+        return NO;
+
+    return [self isEqualToDictionary:anObject];
 }
 
 /*
@@ -528,31 +542,6 @@
 - (void)encodeWithCoder:(CPCoder)aCoder
 {
     [aCoder _encodeDictionaryOfObjects:self forKey:@"CP.objects"];
-}
-
-@end
-
-@implementation CPDictionary (CPFastEnumeration)
-
-- (int)countByEnumeratingWithState:(id)aState objects:(id)objects count:(id)aCount
-{
-    var count = [self count];
-
-    if (aState.state >= count)
-        return 0;
-
-    var keys = [self allKeys],
-        index = count,
-        objects = new Array(count);
-
-    while (index--)
-        objects[index] = [self objectForKey:keys[index]];
-
-    aState.items0 = objects;
-    aState.items1 = keys;
-    aState.state = count;
-
-    return count;
 }
 
 @end

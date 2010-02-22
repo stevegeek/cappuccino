@@ -1,39 +1,81 @@
+/*
+ * CFData.js
+ * Objective-J
+ *
+ * Created by Francisco Tolmasky.
+ * Copyright 2008-2010, 280 North, Inc.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
 
-function CFData()
+GLOBAL(CFData) = function()
 {
-    this._encodedString = NULL;
-    this._serializedPropertyList = NULL;
+    this._rawString = NULL;
+
+    this._propertyList = NULL;
+    this._propertyListFormat = NULL;
+
+    this._JSONObject = NULL;
 
     this._bytes = NULL;
     this._base64 = NULL;
 }
 
-CFData.prototype.serializedPropertyList = function()
+CFData.prototype.propertyList = function()
 {
-    if (!this._serializedPropertyList)
-        this._serializedPropertyList = CFPropertyList.propertyListFromString(this.encodedString());
+    if (!this._propertyList)
+        this._propertyList = CFPropertyList.propertyListFromString(this.rawString());
 
-    return this._serializedPropertyList;
+    return this._propertyList;
 }
 
-CFData.prototype.encodedString = function()
+CFData.prototype.JSONObject = function()
 {
-    if (this._encodedString === NULL)
+    if (!this._JSONObject)
     {
-        var serializedPropertyList = this._serializedPropertyList;
+        try
+        {
+            this._JSONObject = JSON.parse(this.rawString());
+        }
+        catch (anException)
+        {
+        }
+    }
 
-        if (this._serializedPropertyList)
-            this._encodedString = CFPropertyList.stringFromPropertyList(serializedPropertyList);
+    return this._JSONObject;
+}
+
+CFData.prototype.rawString = function()
+{
+    if (this._rawString === NULL)
+    {
+        if (this._propertyList)
+            this._rawString = CFPropertyList.stringFromPropertyList(this._propertyList, this._propertyListFormat);
+
+        else if (this._JSONObject)
+            this._rawString = JSON.stringify(this._JSONObject);
 
 //        Ideally we would convert these bytes or base64 into a string.
 //        else if (this._bytes)
 //        else if (this._base64)
 
         else
-            throw "Can't convert data to string.";
+            throw new Error("Can't convert data to string.");
     }
 
-    return this._encodedString;
+    return this._rawString;
 }
 
 CFData.prototype.bytes = function()
@@ -46,7 +88,7 @@ CFData.prototype.base64 = function()
     return this._base64;
 }
 
-function CFMutableData()
+GLOBAL(CFMutableData) = function()
 {
     CFData.call(this);
 }
@@ -55,25 +97,37 @@ CFMutableData.prototype = new CFData();
 
 function clearMutableData(/*CFMutableData*/ aData)
 {
-    this._encodedString = NULL;
-    this._serializedPropertyList = NULL;
+    this._rawString = NULL;
+
+    this._propertyList = NULL;
+    this._propertyListFormat = NULL;
+
+    this._JSONObject = NULL;
 
     this._bytes = NULL;
     this._base64 = NULL;
 }
 
-CFMutableData.prototype.setSerializedPropertyList = function(/*PropertyList*/ aPropertyList)
+CFMutableData.prototype.setPropertyList = function(/*PropertyList*/ aPropertyList, /*Format*/ aFormat)
 {
     clearMutableData(this);
 
-    this._serializedPropertyList = aPropertyList;
+    this._propertyList = aPropertyList;
+    this._propertyListFormat = aFormat;
 }
 
-CFMutableData.prototype.setEncodedString = function(/*String*/ aString)
+CFMutableData.prototype.setJSONObject = function(/*Object*/ anObject)
 {
     clearMutableData(this);
 
-    this._encodedString = aString;
+    this._JSONObject = anObject
+}
+
+CFMutableData.prototype.setRawString = function(/*String*/ aString)
+{
+    clearMutableData(this);
+
+    this._rawString = aString;
 }
 
 CFMutableData.prototype.setBytes = function(/*Array*/ bytes)
@@ -101,7 +155,7 @@ var base64_map_to = [
 for (var i = 0; i < base64_map_to.length; i++)
     base64_map_from[base64_map_to[i].charCodeAt(0)] = i;
 
-function base64_decode_to_array(input, strip)
+GLOBAL(base64_decode_to_array) = function(input, strip)
 {
     if (strip)
         input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
@@ -130,7 +184,7 @@ function base64_decode_to_array(input, strip)
     return output;
 }
 
-function base64_encode_array(input)
+GLOBAL(base64_encode_array) = function(input)
 {
     var pad = (3 - (input.length % 3)) % 3,
         length = input.length + pad,
@@ -168,20 +222,19 @@ function base64_encode_array(input)
     return output.join("");
 }
 
-function base64_decode_to_string(input, strip)
+GLOBAL(base64_decode_to_string) = function(input, strip)
 {
     return bytes_to_string(base64_decode_to_array(input, strip));
 }
 
-function bytes_to_string(bytes)
+GLOBAL(bytes_to_string) = function(bytes)
 {
     // This is relatively efficient, I think:
     return String.fromCharCode.apply(NULL, bytes);
 }
 
-exports.bytes_to_string = bytes_to_string;
 
-function base64_encode_string(input)
+GLOBAL(base64_encode_string) = function(input)
 {
     var temp = [];
     for (var i = 0; i < input.length; i++)
@@ -189,6 +242,3 @@ function base64_encode_string(input)
 
     return base64_encode_array(temp);
 }
-
-exports.CFData = CFData;
-exports.CFMutableData = CFMutableData;

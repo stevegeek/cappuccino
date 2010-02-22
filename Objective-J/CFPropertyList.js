@@ -1,14 +1,35 @@
+/*
+ * CFPropertyList.js
+ * Objective-J
+ *
+ * Created by Francisco Tolmasky.
+ * Copyright 2008-2010, 280 North, Inc.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
 
 var OBJECT_COUNT   = 0;
 
-function generateObjectUID()
+GLOBAL(objj_generateObjectUID) = function()
 {
     return OBJECT_COUNT++;
 }
 
-function CFPropertyList()
+GLOBAL(CFPropertyList) = function()
 {
-    this._UID = generateObjectUID();
+    this._UID = objj_generateObjectUID();
 }
 
 // We are really liberal when accepting DOCTYPEs.
@@ -43,7 +64,7 @@ CFPropertyList.dataFromPropertyList = function(/*CFPropertyList*/ aPropertyList,
 {
     var data = new CFMutableData();
 
-    data.setEncodedString(CFPropertyList.stringFromPropertyList(aPropertyList, aFormat));
+    data.setRawString(CFPropertyList.stringFromPropertyList(aPropertyList, aFormat));
 
     return data;
 }
@@ -60,6 +81,18 @@ CFPropertyList.stringFromPropertyList = function(/*CFPropertyList*/ aPropertyLis
             serializers["finish"]();
 }
 
+#ifdef COMMONJS
+CFPropertyList.readPropertyListFromFile = function(/*String*/ aFilePath)
+{
+    return CFPropertyList.propertyListFromString(FILE.read(aFilePath, { charset:"UTF-8" }));
+}
+
+CFPropertyList.writePropertyListToFile = function(/*CFPropertyList*/ aPropertyList, /*String*/ aFilePath, /*Format*/ aFormat)
+{
+    return FILE.write(aFilePath, CFPropertyList.stringFromPropertyList(aPropertyList, aFormat), { charset:"UTF-8" });
+}
+#endif
+
 function serializePropertyList(/*CFPropertyList*/ aPropertyList, /*Object*/ serializers)
 {
     var type = typeof aPropertyList,
@@ -74,7 +107,7 @@ function serializePropertyList(/*CFPropertyList*/ aPropertyList, /*Object*/ seri
 
     if (aPropertyList === YES || aPropertyList === NO)
         type = "boolean";
-    
+
     else if (type === "number")
     {
         if (FLOOR(aPropertyList) === aPropertyList)
@@ -82,12 +115,12 @@ function serializePropertyList(/*CFPropertyList*/ aPropertyList, /*Object*/ seri
         else
             type = "real";
     }
-    
+
     else if (type !== "string")
     {
         if (aPropertyList.slice)
             type = "array";
-    
+
         else
             type = "dictionary";
     }
@@ -137,7 +170,7 @@ CFPropertyListSerializers[CFPropertyList.FormatXML_v1_0] =
 
                         for (; index < count; ++index)
                             string += serializePropertyList(anArray[index], serializers);
-    
+
                         return string + "</array>";
                     },
 
@@ -188,7 +221,7 @@ CFPropertyListSerializers[CFPropertyList.Format280North_v1_0] =
                     {
                         return STRING_MARKER + ';' + aString.length + ';' + aString;
                     },
-    
+
     "boolean" :     function(/*Boolean*/ aBoolean)
                     {
                         return (aBoolean ? TRUE_MARKER : FALSE_MARKER) + ';';
@@ -334,7 +367,7 @@ var _plist_traverseNextNode = function(anXMLNode, stayWithin, stack)
 
 CFPropertyList.propertyListFromData = function(/*Data*/ aData, /*Format*/ aFormat)
 {
-    return CFPropertyList.propertyListFromString(aData.encodedString(), aFormat);
+    return CFPropertyList.propertyListFromString(aData.rawString(), aFormat);
 }
 
 CFPropertyList.propertyListFromString = function(/*String*/ aString, /*Format*/ aFormat)
@@ -551,45 +584,42 @@ CFPropertyList.propertyListFromXML = function(/*String | XMLNode*/ aStringOrXMLN
     return plistObject;
 }
 
-exports.generateObjectUID = generateObjectUID;
-exports.CFPropertyList = CFPropertyList;
+GLOBAL(kCFPropertyListOpenStepFormat)      = CFPropertyList.FormatOpenStep;
+GLOBAL(kCFPropertyListXMLFormat_v1_0)      = CFPropertyList.FormatXML_v1_0;
+GLOBAL(kCFPropertyListBinaryFormat_v1_0)   = CFPropertyList.FormatBinary_v1_0;
+GLOBAL(kCFPropertyList280NorthFormat_v1_0) = CFPropertyList.Format280North_v1_0;
 
-exports.CFPropertyListCreate = function()
+GLOBAL(CFPropertyListCreate) = function()
 {
     return new CFPropertyList();
 }
 
-exports.kCFPropertyListOpenStepFormat        = CFPropertyList.FormatOpenStep;
-exports.kCFPropertyListXMLFormat_v1_0        = CFPropertyList.FormatXML_v1_0;
-exports.kCFPropertyListBinaryFormat_v1_0     = CFPropertyList.FormatBinary_v1_0;
-exports.kCFPropertyList280NorthFormat_v1_0   = CFPropertyList.Format280North_v1_0;
-
-exports.CFPropertyListCreateFromXMLData = function(/*Data*/ data)
+GLOBAL(CFPropertyListCreateFromXMLData) = function(/*Data*/ data)
 {
     return CFPropertyList.propertyListFromData(data, CFPropertyList.FormatXML_v1_0);
 }
 
-exports.CFPropertyListCreateXMLData = function(/*PropertyList*/ aPropertyList)
+GLOBAL(CFPropertyListCreateXMLData) = function(/*PropertyList*/ aPropertyList)
 {
     return CFPropertyList.dataFromPropertyList(aPropertyList, CFPropertyList.FormatXML_v1_0);
 }
 
-exports.CFPropertyListCreateFrom280NorthData = function(/*Data*/ data)
+GLOBAL(CFPropertyListCreateFrom280NorthData) = function(/*Data*/ data)
 {
     return CFPropertyList.propertyListFromData(data, CFPropertyList.Format280North_v1_0);
 }
 
-exports.CFPropertyListCreate280NorthData = function(/*PropertyList*/ aPropertyList)
+GLOBAL(CFPropertyListCreate280NorthData) = function(/*PropertyList*/ aPropertyList)
 {
     return CFPropertyList.dataFromPropertyList(aPropertyList, CFPropertyList.Format280North_v1_0);
 }
 
-exports.CPPropertyListCreateFromData = function(/*CFData*/ data, /*Format*/ aFormat)
+GLOBAL(CPPropertyListCreateFromData) = function(/*CFData*/ data, /*Format*/ aFormat)
 {
     return CFPropertyList.propertyListFromData(data, aFormat);
 }
 
-exports.CPPropertyListCreateData = function(/*PropertyList*/ aPropertyList, /*Format*/ aFormat)
+GLOBAL(CPPropertyListCreateData) = function(/*PropertyList*/ aPropertyList, /*Format*/ aFormat)
 {
     return CFPropertyList.dataFromPropertyList(aPropertyList, aFormat);
 }

@@ -7,12 +7,9 @@ var FILE = require("file"),
     CLEAN = require("jake/clean").CLEAN,
     CLOBBER = require("jake/clean").CLOBBER,
     base64 = require("base64"),
-    environment = require("objective-j/jake/environment"),
     ObjectiveJ = require("objective-j"),
+    environment = require("objective-j/jake/environment"),
     task = Jake.task;
-
-var CFPropertyList = ObjectiveJ.CFPropertyList,
-    CFMutableDictionary = ObjectiveJ.CFMutableDictionary;
 
 var Task = Jake.Task,
     filedir = Jake.filedir;
@@ -317,7 +314,17 @@ BundleTask.prototype.buildProductStaticPathForEnvironment = function(anEnvironme
 
 BundleTask.prototype.buildProductMHTMLPathForEnvironment = function(anEnvironment)
 {
-    return FILE.join(this.buildProductPath(), anEnvironment.name() + ".environment", "MHTML.txt");
+    return FILE.join(this.buildProductPath(), anEnvironment.name() + ".environment", "MHTMLPaths.txt");
+}
+
+BundleTask.prototype.buildProductMHTMLDataPathForEnvironment = function(anEnvironment)
+{
+    return FILE.join(this.buildProductPath(), anEnvironment.name() + ".environment", "MHTMLData.txt");
+}
+
+BundleTask.prototype.buildProductMHTMLTestPathForEnvironment = function(anEnvironment)
+{
+    return FILE.join(this.buildProductPath(), anEnvironment.name() + ".environment", "MHTMLTest.txt");
 }
 
 BundleTask.prototype.buildProductDataURLPathForEnvironment = function(anEnvironment)
@@ -460,7 +467,11 @@ BundleTask.prototype.defineResourceTask = function(aResourcePath, aDestinationPa
                 FILE.write(spritedDestinationPath, base64.encode(FILE.read(aResourcePath, "b")), { charset:"UTF-8" });
             });
 
-            task (anEnvironment.name() + "-sprites", [spritedDestinationPath]);
+            filedir (this.buildProductDataURLPathForEnvironment(anEnvironment), [spritedDestinationPath]);
+            filedir (this.buildProductMHTMLPathForEnvironment(anEnvironment), [spritedDestinationPath]);
+            filedir (this.buildProductMHTMLDataPathForEnvironment(anEnvironment), [spritedDestinationPath]);
+            filedir (this.buildProductMHTMLTestPathForEnvironment(anEnvironment), [spritedDestinationPath]);
+
         }, this);
     }
 
@@ -570,6 +581,10 @@ BundleTask.prototype.defineResourceTasks = function()
     }, this);
 }
 
+
+var RESOURCES_PATH  = FILE.join(FILE.absolute(FILE.dirname(module.path)), "RESOURCES"),
+    MHTMLTestPath   = FILE.join(RESOURCES_PATH, "MHTMLTest.txt");
+
 BundleTask.prototype.defineSpritedImagesTask = function()
 {
     this.environments().forEach(function(/*Environment*/ anEnvironment)
@@ -578,59 +593,109 @@ BundleTask.prototype.defineSpritedImagesTask = function()
             return;
 
         var folder = anEnvironment.name() + ".environment",
-            resourcesPath = FILE.join(this.buildIntermediatesProductPath(), folder, "Resources", ""),
-            dataURLPath = this.buildProductDataURLPathForEnvironment(anEnvironment),
-            MHTMLPath = this.buildProductMHTMLPathForEnvironment(anEnvironment),
-            productName = this.productName();
+            resourcesPath = FILE.join(this.buildIntermediatesProductPath(), folder, "Resources", "");
 
-        task(anEnvironment.name() + "-sprites", function(aTask)
+        function isDataResource(/*String*/ aFilename)
         {
-            TERM.stream.print("Creating sprited images file... \0green(" + dataURLPath +"\0)");
+            return FILE.isFile(aFilename) && aFilename.indexOf(resourcesPath) === 0 && isImage(aFilename);
+        }
 
-            var dataURLStream = FILE.open(dataURLPath, "w+", { charset:"UTF-8" }),
-                MHTMLStream = FILE.open(MHTMLPath, "w+", { charset:"UTF-8" }),
-                MHTMLContents = "/*\r\nContent-Type: multipart/related; boundary=\"_ANY_STRING_WILL_DO_AS_A_SEPARATOR\"\r\n\r\n";
+        var productName = this.productName(),
+            dataURLPath = this.buildProductDataURLPathForEnvironment(anEnvironment);
+
+        filedir (dataURLPath, function(aTask)
+        {
+            TERM.stream.print("Creating data URLs file... \0green(" + dataURLPath +"\0)");
+
+            var dataURLStream = FILE.open(dataURLPath, "w+", { charset:"UTF-8" });
 
             dataURLStream.write("@STATIC;1.0;");
-            MHTMLStream.write("@STATIC;1.0;");
 
             aTask.prerequisites().forEach(function(aFilename)
             {
-                if (!FILE.isFile(aFilename) || aFilename.indexOf(resourcesPath) !== 0 || !isImage(aFilename))
+                if (!isDataResource(aFilename))
                     return;
 
                 var resourcePath = "Resources/" + FILE.relative(resourcesPath, aFilename);
 
                 dataURLStream.write("u;" + resourcePath.length + ";" + resourcePath);
-                MHTMLStream.write("u;" + resourcePath.length + ";" + resourcePath);
 
-                // As data URL...
                 var contents =  "data:" + mimeType(aFilename) +
                                 ";base64," + FILE.read(aFilename, "b").decodeToString("UTF-8");
 
                 dataURLStream.write(contents.length + ";" + contents);
-
-                // As MHTML...
-                contents = "mhtml:" + FILE.join(folder, productName + ".sj!") + resourcePath;
-
-                MHTMLContents += "--_ANY_STRING_WILL_DO_AS_A_SEPARATOR\r\n";
-                MHTMLContents += "Content-Location:" + resourcePath + "\r\nContent-Transfer-Encoding:base64\r\n\r\n";
-                MHTMLContents += FILE.read(aFilename, "b").decodeToString("UTF-8");
-                MHTMLContents += "\r\n";
-
-                MHTMLStream.write(contents.length + ";" + contents);
             });
 
             dataURLStream.write("e;");
             dataURLStream.close();
+        });
 
-            MHTMLStream.write("e;");
-            MHTMLStream.write(MHTMLContents + "*/");
+        this.enhance([dataURLPath]);
+
+        var MHTMLPath = this.buildProductMHTMLPathForEnvironment(anEnvironment);
+
+        filedir (MHTMLPath, function(aTask)
+        {
+            TERM.stream.print("Creating MHTML paths file... \0green(" + MHTMLPath +"\0)");
+
+            var MHTMLStream = FILE.open(MHTMLPath, "w+", { charset:"UTF-8" });
+
+            MHTMLStream.write("@STATIC;1.0;");
+
+            aTask.prerequisites().forEach(function(aFilename)
+            {
+                if (!isDataResource(aFilename))
+                    return;
+
+                var resourcePath = "Resources/" + FILE.relative(resourcesPath, aFilename);
+
+                MHTMLStream.write("u;" + resourcePath.length + ";" + resourcePath);
+            });
+
             MHTMLStream.close();
         });
 
-        this.enhance([anEnvironment.name() + "-sprites"]);
+        this.enhance([MHTMLPath]);
 
+        var MHTMLDataPath = this.buildProductMHTMLDataPathForEnvironment(anEnvironment);
+
+        filedir (MHTMLDataPath, function(aTask)
+        {
+            TERM.stream.print("Creating MHTML images file... \0green(" + MHTMLDataPath +"\0)");
+
+            var MHTMLDataStream = FILE.open(MHTMLDataPath, "w+", { charset:"UTF-8" });
+
+            MHTMLDataStream.write("/*\r\nContent-Type: multipart/related; boundary=\"_ANY_STRING_WILL_DO_AS_A_SEPARATOR\"\r\n\r\n");
+
+            aTask.prerequisites().forEach(function(aFilename)
+            {
+                if (!isDataResource(aFilename))
+                    return;
+
+                var resourcePath = "Resources/" + FILE.relative(resourcesPath, aFilename);
+
+                MHTMLDataStream.write("--_ANY_STRING_WILL_DO_AS_A_SEPARATOR\r\n");
+                MHTMLDataStream.write("Content-Location:" + resourcePath + "\r\nContent-Transfer-Encoding:base64\r\n\r\n");
+                MHTMLDataStream.write(FILE.read(aFilename, "b").decodeToString("UTF-8"));
+                MHTMLDataStream.write("\r\n");
+            });
+
+            MHTMLDataStream.write("*/");
+            MHTMLDataStream.close();
+        });
+
+        this.enhance([MHTMLDataPath]);
+
+        var MHTMLTestDestinationPath = this.buildProductMHTMLTestPathForEnvironment(anEnvironment);
+
+        filedir (MHTMLTestDestinationPath, function(aTask)
+        {
+            TERM.stream.print("Copying MHTML test file... \0green(" + MHTMLTestDestinationPath +"\0)");
+
+            FILE.copy(MHTMLTestPath, MHTMLTestDestinationPath);
+        });
+
+        this.enhance([MHTMLTestDestinationPath]);
     }, this);
 }
 
@@ -649,8 +714,7 @@ BundleTask.prototype.defineStaticTask = function()
         {
             TERM.stream.print("Creating static file... \0green(" + staticPath +"\0)");
 
-            var fileStream = FILE.open(staticPath, "w+", { charset:"UTF-8" }),
-                MHTMLContents = "";
+            var fileStream = FILE.open(staticPath, "w+", { charset:"UTF-8" });
 
             fileStream.write("@STATIC;1.0;");
 
