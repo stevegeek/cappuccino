@@ -597,6 +597,10 @@
     if (![_selectionIndexes count])
         return;
 
+    if ([_delegate respondsToSelector:@selector(collectionView:canDragItemsAtIndexes:withEvent:)] &&
+        ![_delegate collectionView:self canDragItemsAtIndexes:_selectionIndexes withEvent:_mouseDownEvent])
+        return;
+
     // Set up the pasteboard
     var dragTypes = [_delegate collectionView:self dragTypesForItemsAtIndexes:_selectionIndexes];
 
@@ -676,41 +680,42 @@
     return _delegate;
 }
 
+- (CPCollectionViewItem)itemAtIndex:(unsigned)anIndex
+{
+    return [_items objectAtIndex:anIndex];
+}
+
+- (CGRect)frameForItemAtIndex:(unsigned)anIndex
+{
+    return [[[self itemAtIndex:anIndex] view] frame];
+}
+
+- (CGRect)frameForItemsAtIndexes:(CPIndexSet)anIndexSet
+{
+    var indexArray = [],
+        frame = CGRectNull;
+
+    [anIndexSet getIndexes:indexArray maxCount:-1 inIndexRange:nil];
+
+    var index = 0,
+        count = [indexArray count];
+
+    for (; index < count; ++index)
+        frame = CGRectUnion(frame, [self rectForItemAtIndex:indexArray[index]]);
+
+    return frame;
+}
+
 @end
 
 @implementation CPCollectionView (KeyboardInteraction)
 
-- (CGRect)rectForItemAtIndex:(int)index
-{
-    // Don't re-compute anything just grab the current frame
-    // This allows subclasses to override tile without messing this up.
-    return [[_items[index] view] frame];
-}
-
-- (CGRect)rectForItemsAtIndexes:(CPIndexSet)indexSet
-{
-    var indexArray = [],
-        rect = nil;
-
-    [indexSet getIndexes:indexArray maxCount:-1 inIndexRange:nil];
-
-    for (var i = 0, count = indexArray.length; i < count; ++i)
-    {
-        var index = indexArray[i];
-        if (rect == nil)
-            rect = [self rectForItemAtIndex:index];
-        else
-            rect = CGRectUnion(rect, [self rectForItemAtIndex:index]);
-    }
-
-    return rect;
-}
-
 - (void)_scrollToSelection
 {
-    var rect = [self rectForItemsAtIndexes:[self selectionIndexes]];
-    if (rect) 
-        [self scrollRectToVisible:rect];
+    var frame = [self frameForItemsAtIndexes:[self selectionIndexes]];
+
+    if (!CGRectIsNull(frame))
+        [self scrollRectToVisible:frame];
 }
 
 - (void)moveLeft:(id)sender
@@ -753,7 +758,7 @@
     [self _scrollToSelection];
 }
 
-- (void)deleteBackwards:(id)sender
+- (void)deleteBackward:(id)sender
 {
     if ([[self delegate] respondsToSelector:@selector(collectionView:shouldDeleteItemsAtIndexes:)])
     {
@@ -771,6 +776,26 @@
 - (void)keyDown:(CPEvent)anEvent
 {
     [self interpretKeyEvents:[anEvent]];
+}
+
+@end
+
+@implementation CPCollectionView (Deprecated)
+
+- (CGRect)rectForItemAtIndex:(int)anIndex
+{
+    _CPReportLenientDeprecation([self class], _cmd, @selector(frameForItemAtIndex:));
+
+    // Don't re-compute anything just grab the current frame
+    // This allows subclasses to override tile without messing this up.
+    return [self frameForItemAtIndex:anIndex];
+}
+
+- (CGRect)rectForItemsAtIndexes:(CPIndexSet)anIndexSet
+{
+    _CPReportLenientDeprecation([self class], _cmd, @selector(frameForItemsAtIndexes:));
+
+    return [self frameForItemsAtIndexes:anIndexSet];
 }
 
 @end

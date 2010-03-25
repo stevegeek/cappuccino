@@ -24,8 +24,6 @@
 @import "CPTableView.j"
 @import "CPView.j"
  
-var CPThemeStatePressed = CPThemeState("pressed");
-
 @implementation _CPTableColumnHeaderView : CPView
 {
     _CPImageAndTextView _textField;
@@ -62,11 +60,11 @@ var CPThemeStatePressed = CPThemeState("pressed");
 {
     var themeState = [self themeState];
 
-    if(themeState & CPThemeStateHighlighted && themeState & CPThemeStatePressed)
+    if(themeState & CPThemeStateSelected && themeState & CPThemeStateHighlighted)
         [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview-highlighted-pressed.png", CGSizeMake(1.0, 22.0))]];
-    else if (themeState & CPThemeStateHighlighted)
+    else if (themeState & CPThemeStateSelected)
         [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview-highlighted.png", CGSizeMake(1.0, 22.0))]];
-    else if (themeState & CPThemeStatePressed)
+    else if (themeState & CPThemeStateHighlighted)
         [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview-pressed.png", CGSizeMake(1.0, 22.0))]];
     else 
         [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview.png", CGSizeMake(1.0, 22.0))]];
@@ -160,21 +158,24 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
     CPTableView _tableView @accessors(property=tableView);
 }
 
-- (void)initWithFrame:(CGRect)aFrame
+- (void)_init
+{
+    _resizedColumn = -1;
+    _draggedColumn = -1;
+    _pressedColumn = -1;
+    _draggedDistance = 0.0;
+    _lastLocation = nil;
+    _columnOldWidth = nil;
+
+    [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview.png", CGSizeMake(1.0, 22.0))]];
+}
+
+- (id)initWithFrame:(CGRect)aFrame
 {
     self = [super initWithFrame:aFrame];
 
     if (self)
-    {
-        _resizedColumn = -1;
-        _draggedColumn = -1;
-        _pressedColumn = -1;
-        _draggedDistance = 0.0;
-        _lastLocation = nil;
-        _columnOldWidth = nil;
-        
-        [self setBackgroundColor:[CPColor colorWithPatternImage:CPAppKitImage("tableview-headerview.png", CGSizeMake(1.0, 22.0))]];
-    }
+        [self _init];
 
     return self;
 }
@@ -196,8 +197,9 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
     var tableRange = _tableView._tableColumnRanges[aColumnIndex],
         bounds = [self bounds];
 
-    bounds.origin.x = tableRange.location;
-    bounds.size.width = tableRange.length;
+    var rMinX = ROUND(tableRange.location);
+    bounds.origin.x = rMinX;
+    bounds.size.width = FLOOR(tableRange.length + tableRange.location - rMinX);
     
     return bounds;
 }
@@ -220,13 +222,13 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
     if (_pressedColumn != -1)
     {
         var headerView = [_tableView._tableColumns[_pressedColumn] headerView];
-        [headerView unsetThemeState:CPThemeStatePressed];
+        [headerView unsetThemeState:CPThemeStateHighlighted];
     }    
     
     if (column != -1)
     {
         var headerView = [_tableView._tableColumns[column] headerView];
-        [headerView setThemeState:CPThemeStatePressed];
+        [headerView setThemeState:CPThemeStateHighlighted];
     }
     
     _pressedColumn = column;
@@ -278,14 +280,7 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
         
         return;
     }
-/*
-    else if (type & CPLeftMouseDragged && [_tableView allowsColumnREordering])
-    {
-        // Start dragging here   
-        [[CPCursor closedHandCursor] set];
-        return;
-    }
-*/        
+
     [CPApp setTarget:self selector:@selector(trackMouseWithEvent:) forNextEventMatchingMask:CPLeftMouseDraggedMask | CPLeftMouseUpMask | CPLeftMouseDownMask untilDate:nil inMode:nil dequeue:YES];
 }
 
@@ -343,7 +338,8 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
 
 - (void)_updateResizeCursor:(CPEvent)theEvent
 {
-    if (![_tableView allowsColumnResizing] || ![_tableView columnAutoresizingStyle])
+    // never get stuck in resize cursor mode (FIXME take out when we turn on tracking rects)
+    if (![_tableView allowsColumnResizing] || ([theEvent type] === CPLeftMouseUp && ![[self window] acceptsMouseMovedEvents]))
     {
         [[CPCursor arrowCursor] set];
         return;
@@ -371,8 +367,8 @@ var _CPTableColumnHeaderViewStringValueKey = @"_CPTableColumnHeaderViewStringVal
 
 - (void)viewDidMoveToWindow
 {
-    if ([_tableView allowsColumnResizing])
-        [[self window] setAcceptsMouseMovedEvents:YES];
+    //if ([_tableView allowsColumnResizing])
+    //    [[self window] setAcceptsMouseMovedEvents:YES];
 }
 
 - (void)mouseEntered:(CPEvent)theEvent
@@ -486,12 +482,7 @@ var CPTableHeaderViewTableViewKey = @"CPTableHeaderViewTableViewKey";
 {
     if (self = [super initWithCoder:aCoder])
     {
-        _resizedColumn = -1;
-        _draggedColumn = -1;
-        _pressedColumn = -1;
-        _draggedDistance = 0.0;
-        _lastLocation = nil;
-        _columnOldWidth = nil;
+        [self _init];
         _tableView = [aCoder decodeObjectForKey:CPTableHeaderViewTableViewKey];
     }
 

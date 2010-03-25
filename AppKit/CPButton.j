@@ -24,6 +24,7 @@
 @import "CGGeometry.j"
 
 @import "CPControl.j"
+@import "CPStringDrawing.j"
 
 #include "CoreGraphics/CGGeometry.h"
 
@@ -501,8 +502,6 @@ CPButtonStateMixed  = CPThemeState("mixed");
     }
     else
         return [[_CPImageAndTextView alloc] initWithFrame:_CGRectMakeZero()];
-
-    return [super createEphemeralSubviewNamed:aName];
 }
 
 - (void)layoutSubviews
@@ -510,9 +509,8 @@ CPButtonStateMixed  = CPThemeState("mixed");
     var bezelView = [self layoutEphemeralSubviewNamed:@"bezel-view"
                                            positioned:CPWindowBelow
                       relativeToEphemeralSubviewNamed:@"content-view"];
-      
-    if (bezelView)
-        [bezelView setBackgroundColor:[self currentValueForThemeAttribute:@"bezel-color"]];
+
+    [bezelView setBackgroundColor:[self currentValueForThemeAttribute:@"bezel-color"]];
 
     var contentView = [self layoutEphemeralSubviewNamed:@"content-view"
                                              positioned:CPWindowAbove

@@ -40,6 +40,10 @@ CPApp = nil;
 CPApplicationWillFinishLaunchingNotification    = @"CPApplicationWillFinishLaunchingNotification";
 CPApplicationDidFinishLaunchingNotification     = @"CPApplicationDidFinishLaunchingNotification";
 CPApplicationWillTerminateNotification          = @"CPApplicationWillTerminateNotification";
+CPApplicationWillBecomeActiveNotification       = @"CPApplicationWillBecomeActiveNotification";
+CPApplicationDidBecomeActiveNotification        = @"CPApplicationDidBecomeActiveNotification";
+CPApplicationWillResignActiveNotification       = @"CPApplicationWillResignActiveNotification";
+CPApplicationDidResignActiveNotification        = @"CPApplicationDidResignActiveNotification";
 
 CPTerminateNow      = YES;
 CPTerminateCancel   = NO;
@@ -83,6 +87,8 @@ CPRunContinuesResponse  = -1002;
     CPArray                 _windows;
     CPWindow                _keyWindow;
     CPWindow                _mainWindow;
+    CPWindow                _previousKeyWindow;
+    CPWindow                _previousMainWindow;
     
     CPMenu                  _mainMenu;
     CPDocumentController    _documentController;
@@ -92,6 +98,7 @@ CPRunContinuesResponse  = -1002;
     //
     id                      _delegate;
     BOOL                    _finishedLaunching;
+    BOOL                    _isActive;
     
     CPDictionary            _namedArgs;
     CPArray                 _args;
@@ -219,6 +226,26 @@ CPRunContinuesResponse  = -1002;
             removeObserver:_delegate
                       name:CPApplicationDidFinishLaunchingNotification
                     object:self];
+
+        [defaultCenter
+            removeObserver:_delegate
+                      name:CPApplicationWillBecomeActiveNotification
+                    object:self];
+
+        [defaultCenter
+            removeObserver:_delegate
+                      name:CPApplicationDidBecomeActiveNotification
+                    object:self];
+
+        [defaultCenter
+            removeObserver:_delegate
+                      name:CPApplicationWillResignActiveNotification
+                    object:self];
+
+        [defaultCenter
+            removeObserver:_delegate
+                      name:CPApplicationDidResignActiveNotification
+                    object:self];
     }
     
     _delegate = aDelegate;
@@ -235,6 +262,34 @@ CPRunContinuesResponse  = -1002;
             addObserver:_delegate
                selector:@selector(applicationDidFinishLaunching:)
                    name:CPApplicationDidFinishLaunchingNotification
+                 object:self];
+
+    if ([_delegate respondsToSelector:@selector(applicationWillBecomeActive:)])
+        [defaultCenter
+            addObserver:_delegate
+               selector:@selector(applicationWillBecomeActive:)
+                   name:CPApplicationWillBecomeActiveNotification
+                 object:self];
+
+    if ([_delegate respondsToSelector:@selector(applicationDidBecomeActive:)])
+        [defaultCenter
+            addObserver:_delegate
+               selector:@selector(applicationDidBecomeActive:)
+                   name:CPApplicationDidBecomeActiveNotification
+                 object:self];
+
+    if ([_delegate respondsToSelector:@selector(applicationWillResignActive:)])
+        [defaultCenter
+            addObserver:_delegate
+               selector:@selector(applicationWillResignActive:)
+                   name:CPApplicationWillResignActiveNotification
+                 object:self];
+
+    if ([_delegate respondsToSelector:@selector(applicationDidResignActive:)])
+        [defaultCenter
+            addObserver:_delegate
+               selector:@selector(applicationDidResignActive:)
+                   name:CPApplicationDidResignActiveNotification
                  object:self];
 }
 
@@ -379,10 +434,10 @@ CPRunContinuesResponse  = -1002;
 
         [applicationLabel setStringValue:applicationTitle || ""];
 
-        if (version && applicationVersion)
-            [versionLabel setStringValue:sprintf(@"Version %@ (%@)", applicationVersion, version)];
+        if (applicationVersion && version)
+            [versionLabel setStringValue:@"Version " + applicationVersion + " (" + version + ")"];
         else if (applicationVersion || version)
-            [versionLabel setStringValue:sprintf(@"Version %@", applicationVersion || version)];
+            [versionLabel setStringValue:@"Version " + (applicationVersion || version)];
         else
             [versionLabel setStringValue:@""];
 
@@ -419,7 +474,27 @@ CPRunContinuesResponse  = -1002;
 
 - (void)activateIgnoringOtherApps:(BOOL)shouldIgnoreOtherApps
 {
+    [self _willBecomeActive];
+
     [CPPlatform activateIgnoringOtherApps:shouldIgnoreOtherApps];
+    _isActive = YES;
+
+    [self _willResignActive];
+}
+
+- (void)deactivate
+{
+    [self _willResignActive];
+
+    [CPPlatform deactivate];
+    _isActive = NO;
+
+    [self _didResignActive];
+}
+
+- (void)isActive
+{
+    return _isActive;
 }
 
 - (void)hideOtherApplications:(id)aSender
@@ -624,6 +699,14 @@ CPRunContinuesResponse  = -1002;
     return _windows;
 }
 
+/*!
+    Returns an array of visible CPWindow objects, ordered by their front to back order on the screen.
+*/
+- (CPArray)orderedWindows
+{
+    return CPWindowObjectList();
+}
+
 - (void)hide:(id)aSender
 {
     [CPPlatform hide:self];
@@ -777,12 +860,11 @@ CPRunContinuesResponse  = -1002;
     
     if ([windowController respondsToSelector:anAction])
         return windowController;
-    
+
     var theDocument = [windowController document];
-    
-    if (theDocument != delegate && [theDocument respondsToSelector:anAction])
+    if (theDocument !== delegate && [theDocument respondsToSelector:anAction])
         return theDocument;
-    
+
     return nil;
 }
 
@@ -791,7 +873,7 @@ CPRunContinuesResponse  = -1002;
     Checks for a target in the following order:
     <ol>
         <li>a responder from the key window</li>
-        <li>a responder frmo the main window</li>
+        <li>a responder from the main window</li>
         <li>the CPApplication instance</li>
         <li>the application delegate</li>
         <li>the document controller</li>
@@ -830,8 +912,6 @@ CPRunContinuesResponse  = -1002;
 - (void)setCallback:(Function)aCallback forNextEventMatchingMask:(unsigned int)aMask untilDate:(CPDate)anExpiration inMode:(CPString)aMode dequeue:(BOOL)shouldDequeue
 {
     _eventListeners.push(_CPEventListenerMake(aMask, aCallback));
-    
-    if (_eventListeners.length == 3) objj_debug_print_backtrace();
 }
 
 - (CPEvent)setTarget:(id)aTarget selector:(SEL)aSelector forNextEventMatchingMask:(unsigned int)aMask untilDate:(CPDate)anExpiration inMode:(CPString)aMode dequeue:(BOOL)shouldDequeue
@@ -890,10 +970,9 @@ CPRunContinuesResponse  = -1002;
    [self endSheet:sheet returnCode:0];
 }
 
-
 - (CPArray)arguments
 {
-    if(_fullArgsString != window.location.hash)
+    if(_fullArgsString !== window.location.hash)
         [self _reloadArguments];
     
     return _args;
@@ -926,12 +1005,18 @@ CPRunContinuesResponse  = -1002;
 - (void)_reloadArguments
 {
     _fullArgsString = window.location.hash;
-    var args = _fullArgsString.replace("#", "").split("/").slice(0);
     
-    for(var i=0, count = args.length; i<count; i++) 
-        args[i] = decodeURIComponent(args[i]);
-    
-    _args = args;
+    if (_fullArgsString.length)
+    {
+        var args = _fullArgsString.substring(1).split("/");
+
+        for (var i = 0, count = args.length; i < count; i++)
+            args[i] = decodeURIComponent(args[i]);
+
+        _args = args;
+    }
+    else
+        _args = [];
 }
 
 - (CPDictionary)namedArguments
@@ -953,10 +1038,65 @@ CPRunContinuesResponse  = -1002;
     return !![_documentController openDocumentWithContentsOfURL:aURL display:YES error:NULL];
 }
 
+- (void)_willBecomeActive
+{
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPApplicationWillBecomeActiveNotification 
+                                                        object:self 
+                                                      userInfo:nil];
+}
+
+- (void)_didBecomeActive
+{
+    if (![self keyWindow] && _previousKeyWindow && 
+        [[self windows] indexOfObjectIdenticalTo:_previousKeyWindow] !== CPNotFound)
+        [_previousKeyWindow makeKeyWindow];
+
+    if (![self mainWindow] && _previousMainWindow && 
+        [[self windows] indexOfObjectIdenticalTo:_previousMainWindow] !== CPNotFound)
+        [_previousMainWindow makeMainWindow];
+
+    if ([self keyWindow])
+        [[self keyWindow] orderFront:self];
+    else if ([self mainWindow])
+        [[self mainWindow] makeKeyAndOrderFront:self];
+    else
+        [[self mainMenu]._menuWindow makeKeyWindow]; //FIXME this may not actually work
+
+    _previousKeyWindow = nil;
+    _previousMainWindow = nil;
+
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPApplicationDidBecomeActiveNotification 
+                                                        object:self 
+                                                      userInfo:nil];
+}
+
+- (void)_willResignActive
+{
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPApplicationWillResignActiveNotification 
+                                                        object:self 
+                                                      userInfo:nil];
+}
+
 - (void)_didResignActive
 {
     if (self._activeMenu)
         [self._activeMenu cancelTracking];
+
+    if ([self keyWindow])
+    {
+        _previousKeyWindow = [self keyWindow];
+        [_previousKeyWindow resignKeyWindow];
+    }
+
+    if ([self mainWindow])
+    {
+        _previousMainWindow = [self mainWindow];
+        [_previousMainWindow resignMainWindow];
+    }
+
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPApplicationDidResignActiveNotification 
+                                                        object:self 
+                                                      userInfo:nil];
 }
 
 + (CPString)defaultThemeName
@@ -1005,29 +1145,8 @@ function CPApplicationMain(args, namedArgs)
 
     [principalClass sharedApplication];
 
-    //FIXME?
-    if (!args)
-    {
-        var args = [CPApp arguments];
-
-        if([args containsObject:"debug"])
-            CPLogRegister(CPLogPopup);
-    }
-
-    if (!namedArgs)
-    {
-        var searchParams = window.location.search.substring(1).split("&");
-            namedArgs = [CPDictionary dictionary];
-
-        for(var i=0; i<searchParams.length; i++)
-        {
-            var index = searchParams[i].indexOf('=');
-            if(index == -1)
-                [namedArgs setObject: "" forKey:searchParams[i]];
-            else
-                [namedArgs setObject: searchParams[i].substring(index+1) forKey: searchParams[i].substring(0, index)];
-        }
-    }
+    if ([args containsObject:"debug"])
+        CPLogRegister(CPLogPopup);
 
     CPApp._args = args;
     CPApp._namedArgs = namedArgs;

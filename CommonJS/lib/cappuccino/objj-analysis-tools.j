@@ -2,14 +2,42 @@ var FILE = require("file");
 var OBJJ = require("objective-j");
 var Context = require("interpreter").Context;
 
-function ObjectiveJRuntimeAnalyzer(rootPath)
+ObjectiveJRuntimeAnalyzer = function(rootPath)
 {
     this.rootPath = rootPath;
+    this.rootURL = new CFURL(String(rootPath));
+
     this.context = new Context();
 
     this.scope = setupObjectiveJ(this.context);
 
     this.require = this.context.global.require;
+
+    this.mainBundleURL = new this.context.global.CFURL("file:" + this.rootPath);
+
+    var _OBJJ = this.require("objective-j");
+
+    // TODO: deprecate these
+    _OBJJ.Executable.prototype.path = function() {
+        var url = this.URL();
+        return url ? url.absoluteURL().path() : null;
+    }
+    _OBJJ.FileDependency.prototype.path = function() {
+        var url = this.URL();
+        return url ? url.path() : null;
+    }
+    this.context.global.CFBundle.prototype.executablePath = function() {
+        var url = this.executableURL();
+        return url ? url.absoluteURL().path() : null;
+    }
+
+    var requestedURLs = this.requestedURLs = {};
+    var _lookupCachedRequest = this.context.global.CFHTTPRequest._lookupCachedRequest;
+    this.context.global.CFHTTPRequest._lookupCachedRequest = function(aURL) {
+        var path = new CFURL(aURL, this.rootURL).absoluteURL().path();
+        requestedURLs[path] = true;
+        return _lookupCachedRequest.apply(null, arguments);
+    }
 }
 
 ObjectiveJRuntimeAnalyzer.prototype.setIncludePaths = function(includePaths) {
@@ -17,7 +45,15 @@ ObjectiveJRuntimeAnalyzer.prototype.setIncludePaths = function(includePaths) {
 }
 
 ObjectiveJRuntimeAnalyzer.prototype.setEnvironments = function(environments) {
-    this.require("objective-j").environments = function() { return environments; };
+    this.context.global.CFBundle.environments = function() { return environments; };
+}
+
+ObjectiveJRuntimeAnalyzer.prototype.makeAbsoluteURL = function(/*CFURL|String*/ aURL)
+{
+    if (aURL instanceof this.context.global.CFURL && aURL.scheme())
+        return aURL;
+
+    return new this.context.global.CFURL(aURL, this.mainBundleURL);
 }
 
 ObjectiveJRuntimeAnalyzer.prototype.initializeGlobalRecorder = function()
@@ -40,7 +76,7 @@ ObjectiveJRuntimeAnalyzer.prototype.initializeGlobalRecorder = function()
 
         var after = cloneProperties(self.scope);
 
-        if (before) {
+        if (before && currentFile) {
             self.files[currentFile] = self.files[currentFile] || {};
             self.files[currentFile].globals = self.files[currentFile].global || {};
 
@@ -52,15 +88,23 @@ ObjectiveJRuntimeAnalyzer.prototype.initializeGlobalRecorder = function()
                 changed : self.files[currentFile].globals
             });
         }
+        else if (!currentFile) {
+            // I don't know why this happens. It shouldn't.
+            // CPLog.debug("currentFile is null.");
+        }
 
         before = after;
     }
 
     var _OBJJ = this.require("objective-j");
-    var _fileExecuterForPath = _OBJJ.fileExecuterForPath;
-    _OBJJ.fileExecuterForPath = function(/*String*/ referencePath) {
-        var fileExecutor = _fileExecuterForPath.apply(this, arguments);
-        return function(/*String*/ aPath, /*BOOL*/ isLocal, /*BOOL*/ shouldForce) {
+    var _fileExecuterForURL = _OBJJ.Executable.fileExecuterForURL;
+    _OBJJ.Executable.fileExecuterForURL = function(/*CFURL*/ referenceURL) {
+        referenceURL = self.makeAbsoluteURL(referenceURL);
+        var referencePath = referenceURL.absoluteURL().path()
+        var fileExecutor = _fileExecuterForURL.apply(this, arguments);
+        return function(/*CFURL*/ aURL, /*BOOL*/ isQuoted, /*BOOL*/ shouldForce) {
+            var aPath = typeof aURL === "string" ? aURL : aURL.absoluteURL().path();
+
             recordAndReset();
 
             evaluatingPaths.push(currentFile);
@@ -68,7 +112,7 @@ ObjectiveJRuntimeAnalyzer.prototype.initializeGlobalRecorder = function()
             // NOTE: we distinguish local and library imports using absolute and relative paths.
             // we resolve the library paths later (in "mergeLibraryImports()") since doing it here seems
             // to change the resulting recorded globals.
-            if (isLocal)
+            if (isQuoted && !FILE.isAbsolute(aPath))
                 currentFile = FILE.normal(FILE.join(referencePath, aPath));
             else
                 currentFile = aPath;
@@ -88,7 +132,7 @@ ObjectiveJRuntimeAnalyzer.prototype.load = function(path)
 {
     this.require("objective-j").objj_eval(
         "("+(function(path) {
-            fileImporterForPath("/")(path, true, function() {
+            objj_importFile(path, true, function() {
                 print("Done importing and evaluating: " + path);
             });
         })+")"
@@ -137,7 +181,7 @@ ObjectiveJRuntimeAnalyzer.prototype.mergeLibraryImports = function()
     for (var relativePath in this.files) {
         if (FILE.isRelative(relativePath)) {
             var absolutePath = this.executableForImport(relativePath, false).path();
-            // CPLog.debug("Merging " + relativePath + " => " + absolutePath);
+            CPLog.debug("Merging " + relativePath + " => " + absolutePath);
 
             this.files[absolutePath] = this.files[absolutePath] || {};
             this.files[absolutePath].globals = this.files[absolutePath].globals || {};
@@ -154,8 +198,16 @@ ObjectiveJRuntimeAnalyzer.prototype.mergeLibraryImports = function()
 ObjectiveJRuntimeAnalyzer.prototype.executableForImport = function(path, isLocal)
 {
     if (isLocal === undefined) isLocal = true;
-    var _OBJJ = this.require("objective-j");
-    return new _OBJJ.FileExecutableSearch(path, isLocal).result();
+    var _OBJJ = this.require("objective-j"),
+        fileExecutable = nil,
+        URL = new this.context.global.CFURL(path);
+
+    _OBJJ.Executable.fileExecutableSearcherForURL(URL)(URL, isLocal, function(/*FileExecutable*/ aFileExecutable)
+    {
+        fileExecutable = aFileExecutable;
+    });
+
+    return fileExecutable;
 }
 
 /*
@@ -330,25 +382,6 @@ function markFilesReferencedByTokens(tokens, globalsToFiles, referencedFiles) {
         }
     });
 }
-
-@implementation PressBundleDelgate : CPObject
-{
-    Function didFinishLoadingCallback;
-}
-- (id)initWithCallback:(Function)aCallback
-{
-    if (self = [super init]) {
-        didFinishLoadingCallback = aCallback;
-    }
-    return self;
-}
-- (void)bundleDidFinishLoading:(CPBundle)aBundle
-{
-    print("didFinishLoading: "+aBundle);
-    if (didFinishLoadingCallback)
-        didFinishLoadingCallback(aBundle);
-}
-@end
 
 // create a new scope loaded with Narwhal and Objective-J
 function setupObjectiveJ(context)
