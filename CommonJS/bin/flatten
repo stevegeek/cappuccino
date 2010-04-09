@@ -44,6 +44,11 @@ parser.option("-s", "--split", "number", "split")
     .def(0)
     .help("Split into multiple files");
 
+parser.option("-c", "--compressor", "compressor")
+    .def("shrinksafe")
+    .set()
+    .help("Select a compressor to use (closure-compiler, yuicompressor, shrinksafe), or \"none\" (default: shrinksafe)");
+
 parser.option("-v", "--verbose", "verbose")
    .def(false)
    .set(true)
@@ -110,7 +115,14 @@ function main(args)
     FILE.copyTree(rootPath, outputPath);
 
     applicationJSs.forEach(function(applicationJS, n) {
-        outputPath.join("Application"+(n||"")+".js").write(applicationJS);
+        var name = "Application"+(n||"")+".js";
+        if (options.compressor === "none") {
+            print("skipping compression: " + name);
+        } else {
+            print("compressing: " + name);
+            applicationJS = require("minify/"+options.compressor).compress(applicationJS, { charset : "UTF-8", useServer : true });
+        }
+        outputPath.join(name).write(applicationJS, { charset : "UTF-8" });
     });
 
     rewriteMainHTML(outputPath.join(options.index));
@@ -133,11 +145,14 @@ ObjectiveJFlattener.prototype.buildApplicationJS = function() {
     this.serializeFunctions();
     this.serializeFileCache();
 
+    var additions = FILE.read(FILE.join(FILE.dirname(module.path), "..", "..", "cappuccino", "lib", "cappuccino", "objj-flatten-additions.js"), { charset:"UTF-8" });
+
     var applicationJSs = [];
 
     if (this.options.split === 0) {
         var buffer = [];
         buffer.push("var baseURL = new CFURL(\".\", ObjectiveJ.pageURL);");
+        buffer.push(additions);
         buffer.push(this.fileCacheBuffer.join("\n"));
         buffer.push(this.functionsBuffer.join("\n"));
         buffer.push("ObjectiveJ.bootstrap();");
@@ -160,11 +175,13 @@ ObjectiveJFlattener.prototype.buildApplicationJS = function() {
         }
 
         buffers[0].push("var baseURL = new CFURL(\".\", ObjectiveJ.pageURL);");
+        buffers[0].push(additions);
 
         buffers[0].push("var appFilesCount = " + appFilesCount +";");
         buffers[0].push("for (var i = 1; i <= appFilesCount; i++) {");
         buffers[0].push("    var script = document.createElement(\"script\");");
         buffers[0].push("    script.src = \"Application\"+i+\".js\";");
+        buffers[0].push("    script.charset = \"UTF-8\";");
         buffers[0].push("    script.onload = function() { if (--appFilesCount === 0) ObjectiveJ.bootstrap(); };");
         buffers[0].push("    document.getElementsByTagName(\"head\")[0].appendChild(script);");
         buffers[0].push("}");
@@ -281,21 +298,30 @@ ObjectiveJFlattener.prototype.setupFileCache = function() {
 }
 
 // "$1" is the matching indentation
-var scriptTagsBefore = '$1<script type = "text/javascript">\n$1    OBJJ_AUTO_BOOTSTRAP = false;\n$1</script>';
-var scriptTagsAfter  = '$1<script type = "text/javascript" src = "Application.js"></script>';
+var scriptTagsBefore =
+    '$1<script type = "text/javascript">\n'+
+    '$1    OBJJ_AUTO_BOOTSTRAP = false;\n'+
+    '$1</script>';
+
+var scriptTagsAfter =
+    '$1<script type="text/javascript" src="Application.js" charset="UTF-8"></script>';
 
 // enable CPLog:
-// scriptTagsAfter = '$1<script type = "text/javascript">\n$1    CPLogRegister(CPLogConsole);\n$1</script>\n' + scriptTagsAfter;
+// scriptTagsAfter = '$1<script type="text/javascript">\n$1    CPLogRegister(CPLogConsole);\n$1</script>\n' + scriptTagsAfter;
 
 function rewriteMainHTML(indexHTMLPath) {
     if (indexHTMLPath.isFile()) {
-        var indexHTML = indexHTMLPath.read();
+        var indexHTML = indexHTMLPath.read({ charset : "UTF-8" });
 
         // inline the Application.js if it's smallish
         var applicationJSPath = indexHTMLPath.dirname().join("Application.js");
         if (applicationJSPath.size() < 10*1024) {
-            var applicationJS = applicationJSPath.read().split("\n").join("\n$1    ");
-            scriptTagsAfter = '$1<script type = "text/javascript">\n$1    '+applicationJS+'\n$1</script>'
+            // escape any dollar signs by replacing them with two
+            // then indent by splitting/joining on newlines
+            scriptTagsAfter =
+                '$1<script type="text/javascript">\n'+
+                '$1    ' + applicationJSPath.read({ charset : "UTF-8" }).replace(/\$/g, "$$$$").split("\n").join("\n$1    ")+'\n'+
+                '$1</script>';
         }
 
         // attempt to find Objective-J script tag and add ours
@@ -304,7 +330,7 @@ function rewriteMainHTML(indexHTMLPath) {
 
         if (newIndexHTML !== indexHTML) {
             stream.print("\0green(Modified: "+indexHTMLPath+".\0)");
-            indexHTMLPath.write(newIndexHTML);
+            indexHTMLPath.write(newIndexHTML, { charset : "UTF-8" });
             return;
         }
     } else {

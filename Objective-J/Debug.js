@@ -20,6 +20,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifdef BROWSER
+CPLogRegister(CPLogDefault);
+#endif
+
 // formatting helpers
 
 function objj_debug_object_format(aReceiver)

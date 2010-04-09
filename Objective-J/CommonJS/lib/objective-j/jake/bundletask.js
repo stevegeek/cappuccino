@@ -16,8 +16,7 @@ var Task = Jake.Task,
 
 function isImage(/*String*/ aFilename)
 {
-    return  FILE.isFile(aFilename) &&
-            UTIL.has([".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff"], FILE.extension(aFilename).toLowerCase());
+    return UTIL.has([".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff"], FILE.extension(aFilename).toLowerCase());
 }
 
 function mimeType(/*String*/ aFilename)
@@ -370,14 +369,17 @@ BundleTask.prototype.infoPlist = function()
         return anEnvironment.name();
     }));
     infoPlist.setValueForKey("CPBundleExecutable", this.productName() + ".sj");
-    infoPlist.setValueForKey("CPBundleEnvironmentsWithImageSprites", this.environments().filter(
+
+    var environmentsWithImageSprites = this.environments().filter(
     function(anEnvironment)
     {
-        return anEnvironment.spritesImages();
-    }).map(function(anEnvironment)
+        return anEnvironment.spritesImages() && task(this.buildProductDataURLPathForEnvironment(anEnvironment)).prerequisites().filter(isImage).length > 0;
+    }, this).map(function(anEnvironment)
     {
         return anEnvironment.name();
-    }));
+    });
+
+    infoPlist.setValueForKey("CPBundleEnvironmentsWithImageSprites", environmentsWithImageSprites);
 
     var principalClass = this.principalClass();
 
@@ -449,10 +451,14 @@ BundleTask.prototype.resourcesPath = function()
     return FILE.join(this.buildProductPath(), "Resources", "");
 }
 
+// Don't sprite images larger than 32KB, IE 8 doesn't like it.
+BundleTask.isSpritable = function(aResourcePath) {
+    return isImage(aResourcePath) && FILE.size(aResourcePath) < 32768;
+}
+
 BundleTask.prototype.defineResourceTask = function(aResourcePath, aDestinationPath)
 {
-    // Don't sprite images larger than 32KB, IE 8 doesn't like it.
-    if (this.spritesResources() && isImage(aResourcePath) && FILE.size(aResourcePath) < 32768)
+    if (this.spritesResources() && BundleTask.isSpritable(aResourcePath))
     {
         this.environments().forEach(function(/*Environment*/ anEnvironment)
         {
@@ -581,7 +587,6 @@ BundleTask.prototype.defineResourceTasks = function()
     }, this);
 }
 
-
 var RESOURCES_PATH  = FILE.join(FILE.absolute(FILE.dirname(module.path)), "RESOURCES"),
     MHTMLTestPath   = FILE.join(RESOURCES_PATH, "MHTMLTest.txt");
 
@@ -595,17 +600,12 @@ BundleTask.prototype.defineSpritedImagesTask = function()
         var folder = anEnvironment.name() + ".environment",
             resourcesPath = FILE.join(this.buildIntermediatesProductPath(), folder, "Resources", "");
 
-        function isDataResource(aFilename)
-        {
-            return FILE.isFile(aFilename) && aFilename.indexOf(resourcesPath) === 0 && isImage(aFilename);
-        }
-
         var productName = this.productName(),
             dataURLPath = this.buildProductDataURLPathForEnvironment(anEnvironment);
 
         filedir (dataURLPath, function(aTask)
         {
-            var prerequisites = aTask.prerequisites().filter(isDataResource);
+            var prerequisites = aTask.prerequisites().filter(isImage);
 
             if (!prerequisites.length)
             {
@@ -643,7 +643,7 @@ BundleTask.prototype.defineSpritedImagesTask = function()
 
         filedir (MHTMLPath, function(aTask)
         {
-            var prerequisites = aTask.prerequisites().filter(isDataResource);
+            var prerequisites = aTask.prerequisites().filter(isImage);
 
             if (!prerequisites.length)
             {
@@ -677,7 +677,7 @@ BundleTask.prototype.defineSpritedImagesTask = function()
 
         filedir (MHTMLDataPath, function(aTask)
         {
-            var prerequisites = aTask.prerequisites().filter(isDataResource);
+            var prerequisites = aTask.prerequisites().filter(isImage);
 
             if (!prerequisites.length)
             {

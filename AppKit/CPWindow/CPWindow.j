@@ -472,9 +472,6 @@ CPTexturedBackgroundWindowMask
 
 - (void)awakeFromCib
 {
-    if (_initialFirstResponder)
-        [self makeFirstResponder:_initialFirstResponder];
-
     _keyViewLoopIsDirty = ![self _hasKeyViewLoop];
 }
 
@@ -738,6 +735,15 @@ CPTexturedBackgroundWindowMask
 {
     [_platformWindow orderFront:self];
     [_platformWindow order:CPWindowAbove window:self relativeTo:nil];
+
+    if (_firstResponder === self || !_firstResponder)
+        [self makeFirstResponder:[self initialFirstResponder]];
+
+    if (!CPApp._keyWindow)
+        [self makeKeyWindow];
+
+    if (!CPApp._mainWindow)
+        [self makeMainWindow];
 }
 
 /*
@@ -1161,6 +1167,16 @@ CPTexturedBackgroundWindowMask
     return YES;
 }
 
+- (id)initialFirstResponder
+{
+    return _initialFirstResponder;
+}
+
+- (void)setInitialFirstResponder:(id)aResponder
+{
+    _initialFirstResponder = aResponder;
+}
+
 /*!
     Attempts to make the \c aResponder the first responder. Before trying
     to make it the first responder, the receiver will ask the current first responder
@@ -1170,7 +1186,7 @@ CPTexturedBackgroundWindowMask
 */
 - (BOOL)makeFirstResponder:(CPResponder)aResponder
 {
-    if (_firstResponder == aResponder)
+    if (_firstResponder === aResponder)
         return YES;
 
     if(![_firstResponder resignFirstResponder])
@@ -1331,44 +1347,58 @@ CPTexturedBackgroundWindowMask
 
         case CPScrollWheel:         return [[_windowView hitTest:point] scrollWheel:anEvent];
 
-        case CPLeftMouseUp:         if (!_leftMouseDownView)
-                                        return [[_windowView hitTest:point] mouseUp:anEvent];
+        case CPLeftMouseUp:
+        case CPRightMouseUp:        var hitTestedView = _leftMouseDownView,
+                                        selector = type == CPRightMouseUp ? @selector(rightMouseUp:) : @selector(mouseUp:);
 
-                                    [_leftMouseDownView mouseUp:anEvent]
+                                    if (!hitTestedView)
+                                        hitTestedView = [_windowView hitTest:point];
+
+                                    [hitTestedView performSelector:selector withObject:anEvent];
 
                                     _leftMouseDownView = nil;
 
                                     return;
-        case CPLeftMouseDown:       _leftMouseDownView = [_windowView hitTest:point];
+        case CPLeftMouseDown:
+        case CPRightMouseDown:      _leftMouseDownView = [_windowView hitTest:point];
 
                                     if (_leftMouseDownView != _firstResponder && [_leftMouseDownView acceptsFirstResponder])
                                         [self makeFirstResponder:_leftMouseDownView];
 
                                     [CPApp activateIgnoringOtherApps:YES];
 
-                                    var theWindow = [anEvent window];
+                                    var theWindow = [anEvent window],
+                                        selector = type == CPRightMouseDown ? @selector(rightMouseDown:) : @selector(mouseDown:);
 
                                     if ([theWindow isKeyWindow] || [theWindow becomesKeyOnlyIfNeeded] && ![_leftMouseDownView needsPanelToBecomeKey])
-                                        return [_leftMouseDownView mouseDown:anEvent];
+                                        return [_leftMouseDownView performSelector:selector withObject:anEvent];
                                     else
                                     {
                                         // FIXME: delayed ordering?
                                         [self makeKeyAndOrderFront:self];
 
                                         if ([_leftMouseDownView acceptsFirstMouse:anEvent])
-                                            return [_leftMouseDownView mouseDown:anEvent]
+                                            return [_leftMouseDownView performSelector:selector withObject:anEvent];
                                     }
                                     break;
-        case CPLeftMouseDragged:    if (!_leftMouseDownView)
+
+        case CPLeftMouseDragged:
+        case CPRightMouseDragged:   if (!_leftMouseDownView)
                                         return [[_windowView hitTest:point] mouseDragged:anEvent];
 
-                                    return [_leftMouseDownView mouseDragged:anEvent];
-        
-        case CPRightMouseUp:        return [_rightMouseDownView mouseUp:anEvent];
-        case CPRightMouseDown:      _rightMouseDownView = [_windowView hitTest:point];
-                                    return [_rightMouseDownView mouseDown:anEvent];
-        case CPRightMouseDragged:   return [_rightMouseDownView mouseDragged:anEvent];
-        
+                                    var selector;
+                                    if (type == CPRightMouseDragged)
+                                    {
+                                        selector = @selector(rightMouseDragged:)
+                                        if (![_leftMouseDownView respondsToSelector:selector])
+                                            selector = nil;
+                                    }
+
+                                    if (!selector)
+                                        selector = @selector(mouseDragged:)
+
+                                    return [_leftMouseDownView performSelector:selector withObject:anEvent];
+
         case CPMouseMoved:          if (!_acceptsMouseMovedEvents)
                                         return;
 
@@ -1494,7 +1524,7 @@ CPTexturedBackgroundWindowMask
 */
 - (void)resignKeyWindow
 {
-    if (_firstResponder != self && [_firstResponder respondsToSelector:@selector(resignKeyWindow)])
+    if (_firstResponder !== self && [_firstResponder respondsToSelector:@selector(resignKeyWindow)])
         [_firstResponder resignKeyWindow];
 
     if (CPApp._keyWindow === self)
