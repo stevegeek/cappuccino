@@ -25,9 +25,9 @@
 @import "CPTableView.j"
 @import "CPScrollView.j"
 
-/*! 
+/*!
     @ingroup appkit
-    @class CPBrowser    
+    @class CPBrowser
 */
 
 @implementation CPBrowser : CPControl
@@ -64,14 +64,14 @@
 
 + (CPImage)branchImage
 {
-    return [[CPImage alloc] initWithContentsOfFile:[[CPBundle bundleForClass:[self class]] 
+    return [[CPImage alloc] initWithContentsOfFile:[[CPBundle bundleForClass:[self class]]
                                                     pathForResource:"browser-leaf.png"]
                                               size:CGSizeMake(9,9)];
 }
 
 + (CPImage)highlightedBranchImage
 {
-    return [[CPImage alloc] initWithContentsOfFile:[[CPBundle bundleForClass:[self class]] 
+    return [[CPImage alloc] initWithContentsOfFile:[[CPBundle bundleForClass:[self class]]
                                                     pathForResource:"browser-leaf-highlighted.png"]
                                               size:CGSizeMake(9,9)];
 }
@@ -104,10 +104,10 @@
         [_horizontalScrollView setHasVerticalScroller:NO];
         [_horizontalScrollView setAutohidesScrollers:YES];
         [_horizontalScrollView setAutoresizingMask:CPViewWidthSizable|CPViewHeightSizable];
-        
+
         _contentView = [[CPView alloc] initWithFrame:CGRectMake(0, 0, 0, CGRectGetHeight([self bounds]))];
         [_contentView setAutoresizingMask:CPViewHeightSizable];
-        
+
         [_horizontalScrollView setDocumentView:_contentView];
 
         [self addSubview:_horizontalScrollView];
@@ -129,7 +129,7 @@
 }
 
 - (void)setDelegate:(id)anObject
-{    
+{
     _delegate = anObject;
     _delegateSupportsImages = [_delegate respondsToSelector:@selector(browser:imageValueForItem:)];
 
@@ -172,7 +172,7 @@
     // unloads all later columns.
     var indexPlusOne = columnIndex + 1;
 
-    [[_tableViews.slice(indexPlusOne) valueForKey:"enclosingScrollView"] 
+    [[_tableViews.slice(indexPlusOne) valueForKey:"enclosingScrollView"]
       makeObjectsPerformSelector:@selector(removeFromSuperview)];
 
     _tableViews = _tableViews.slice(0, indexPlusOne);
@@ -196,7 +196,7 @@
         selectionIndexes = [lastColumn selectedRowIndexes];
 
     if (lastIndex >= 0 && [selectionIndexes count] > 1)
-        [CPException raise:CPInvalidArgumentException 
+        [CPException raise:CPInvalidArgumentException
                     reason:"Can't add column, column "+lastIndex+" has invalid selection."];
 
     var index = lastIndex+1,
@@ -233,7 +233,7 @@
     [table setAction:@selector(_tableViewClicked:)];
     [table setDoubleAction:@selector(_tableViewDoubleClicked:)];
     [table setDraggingDestinationFeedbackStyle:CPTableViewDraggingDestinationFeedbackStyleRegular];
-    
+
     var scrollView = [[_CPBrowserScrollView alloc] initWithFrame:CGRectMakeZero()];
     [scrollView _setBrowser:self];
     [scrollView setDocumentView:table];
@@ -274,10 +274,10 @@
 
     [view setBranchImage:[[self class] branchImage]];
     [view setHighlightedBranchImage:[[self class] highlightedBranchImage]];
-    
+
     [column setDataView:view];
     [column setResizingMask:CPTableColumnNoResizing];
-    
+
     [aTableView addTableColumn:column];
 }
 
@@ -537,7 +537,7 @@
     if ([_delegate respondsToSelector:@selector(browser:selectionIndexesForProposedSelection:inColumn:)])
         indexSet = [_delegate browser:self selectionIndexesForProposedSelection:indexSet inColumn:column];
 
-    if ([_delegate respondsToSelector:@selector(browser:shouldSelectRowIndexes:inColumn:)] && 
+    if ([_delegate respondsToSelector:@selector(browser:shouldSelectRowIndexes:inColumn:)] &&
        ![_delegate browser:self shouldSelectRowIndexes:indexSet inColumn:column])
         return;
 
@@ -600,6 +600,116 @@
         return [_delegate browser:self draggingViewForRowsWithIndexes:rowIndexes inColumn:columnIndex withEvent:dragEvent offset:dragImageOffset];
 
     return nil;
+}
+
+@end
+
+var CPBrowserColumnWidthsKey            = @"CPBrowserColumnWidthsKey",
+    CPBrowserDelegateKey                = @"CPBrowserDelegateKey",
+    CPBrowserTableViewsKey              = @"CPBrowserTableViewsKey",
+    CPBrowserTableDelegatesKey          = @"CPBrowserTableDelegatesKey",
+    CPBrowserLeafWidthKey               = @"CPBrowserLeafWidthKey",
+    CPBrowserRowHeightKey               = @"CPBrowserRowHeightKey",
+    CPBrowserDefaultColumnWidthKey      = @"CPBrowserDefaultColumnWidthKey",
+    CPBrowserMinColumnWidthKey          = @"CPBrowserMinColumnWidthKey",
+    CPBrowserImageWidthKey              = @"CPBrowserImageWidthKey",
+    CPBrowserPathSeperatorKey           = @"CPBrowserPathSeperatorKey",
+    CPBrowserAllowsMultipleSelectionKey = @"CPBrowserAllowsMultipleSelectionKey",
+    CPBrowserAllowsEmptySelectionKey    = @"CPBrowserAllowsEmptySelectionKey",
+    CPBrowserPrototypeViewKey           = @"CPBrowserPrototypeViewKey",
+    CPBrowserHorizontalScrollViewKey    = @"CPBrowserHorizontalScrollViewKey",
+    CPBrowserContentViewKey             = @"CPBrowserContentViewKey";
+
+@implementation CPBrowser (CPCoding)
+
+- (id)initWithCoder:(CPCoder)aCoder
+{
+    self = [super initWithCoder:aCoder];
+
+    if (self)
+    {
+        _tableViewClass = [_CPBrowserTableView class];
+
+        _tableViews     = [aCoder decodeObjectForKey:CPBrowserTableViewsKey] || [];
+        _tableDelegates = [aCoder decodeObjectForKey:CPBrowserTableDelegatesKey] || [];
+
+        _rowHeight      = [aCoder decodeFloatForKey:CPBrowserRowHeightKey];
+        _defaultColumnWidth = [aCoder decodeFloatForKey:CPBrowserDefaultColumnWidthKey];
+        _minColumnWidth = [aCoder decodeFloatForKey:CPBrowserMinColumnWidthKey];
+        _imageWidth     = [aCoder decodeFloatForKey:CPBrowserImageWidthKey];
+        _leafWidth      = [aCoder decodeFloatForKey:CPBrowserLeafWidthKey];
+        _columnWidths   = [aCoder decodeObjectForKey:CPBrowserColumnWidthsKey] || [];
+
+        _pathSeparator  = [aCoder decodeObjectForKey:CPBrowserPathSeperatorKey];
+
+        _allowsMultipleSelection = [aCoder decodeBoolForKey:CPBrowserAllowsMultipleSelectionKey];
+        _allowsEmptySelection = [aCoder decodeBoolForKey:CPBrowserAllowsEmptySelectionKey];
+
+        _prototypeView  = [aCoder decodeObjectForKey:CPBrowserPrototypeViewKey];
+        _horizontalScrollView = [aCoder decodeObjectForKey:CPBrowserHorizontalScrollViewKey];
+        _contentView    = [aCoder decodeObjectForKey:CPBrowserContentViewKey];
+
+        if (!_prototypeView)
+        {
+            _prototypeView = [[CPTextField alloc] initWithFrame:CGRectMakeZero()];
+            [_prototypeView setVerticalAlignment:CPCenterVerticalTextAlignment];
+            [_prototypeView setValue:[CPColor whiteColor] forThemeAttribute:"text-color" inState:CPThemeStateSelected];
+            [_prototypeView setLineBreakMode:CPLineBreakByTruncatingTail];
+        }
+
+        if (!_horizontalScrollView)
+        {
+            _horizontalScrollView = [[CPScrollView alloc] initWithFrame:[self bounds]];
+            [_horizontalScrollView setHasVerticalScroller:NO];
+            [_horizontalScrollView setAutohidesScrollers:YES];
+            [_horizontalScrollView setAutoresizingMask:CPViewWidthSizable|CPViewHeightSizable];
+        }
+
+        if (!_contentView)
+        {
+            _contentView = [[CPView alloc] initWithFrame:CGRectMake(0, 0, 0, CGRectGetHeight([self bounds]))];
+            [_contentView setAutoresizingMask:CPViewHeightSizable];
+        }
+
+        [_horizontalScrollView setDocumentView:_contentView];
+        [self addSubview:_horizontalScrollView];
+
+        [self setDelegate:[aCoder decodeObjectForKey:CPBrowserDelegateKey]];
+
+        [self setNeedsLayout];
+        [self setNeedsDisplay:YES];
+    }
+
+    return self;
+}
+
+- (void)encodeWithCoder:(CPCoder)aCoder
+{
+    [super encodeWithCoder:aCoder];
+
+    if ([_columnWidths count] > 0)
+        [aCoder encodeObject:_columnWidths forKey:CPBrowserColumnWidthsKey];
+    [aCoder encodeConditionalObject:_delegate forKey:CPBrowserDelegateKey];
+
+    if ([_tableViews count] > 0)
+        [aCoder encodeConditionalObject:_tableViews forKey:CPBrowserTableViewsKey];
+    if ([_tableDelegates count] > 0)
+        [aCoder encodeConditionalObject:_tableDelegates forKey:CPBrowserTableDelegatesKey];
+
+    [aCoder encodeFloat:_leafWidth forKey:CPBrowserLeafWidthKey];
+    [aCoder encodeFloat:_rowHeight forKey:CPBrowserRowHeightKey];
+    [aCoder encodeFloat:_defaultColumnWidth forKey:CPBrowserDefaultColumnWidthKey];
+    [aCoder encodeFloat:_minColumnWidth forKey:CPBrowserMinColumnWidthKey];
+    [aCoder encodeFloat:_imageWidth forKey:CPBrowserImageWidthKey];
+
+    [aCoder encodeObject:_pathSeparator forKey:CPBrowserPathSeperatorKey];
+
+    [aCoder encodeBool:_allowsMultipleSelection forKey:CPBrowserAllowsMultipleSelectionKey];
+    [aCoder encodeBool:_allowsEmptySelection forKey:CPBrowserAllowsEmptySelectionKey];
+
+    [aCoder encodeConditionalObject:_prototypeView forKey:CPBrowserPrototypeViewKey];
+    [aCoder encodeConditionalObject:_horizontalScrollView forKey:CPBrowserHorizontalScrollViewKey];
+    [aCoder encodeConditionalObject:_contentView forKey:CPBrowserContentViewKey];
 }
 
 @end
@@ -740,7 +850,7 @@ var _CPBrowserResizeControlBackgroundImage = nil;
 }
 
 - (void)moveLeft:(id)sender
-{    
+{
     var previousColumn = [_browser selectedColumn] - 1,
         selectedRow = [_browser selectedRowInColumn:previousColumn];
 
@@ -748,7 +858,7 @@ var _CPBrowserResizeControlBackgroundImage = nil;
 }
 
 - (void)moveRight:(id)sender
-{    
+{
     [_browser selectRow:0 inColumn:[_browser selectedColumn] + 1];
 }
 
