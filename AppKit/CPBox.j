@@ -19,25 +19,25 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
- 
+
 @import "CPView.j"
 
 // CPBorderType
 CPNoBorder      = 0;
-CPLineBorder    = 1;    
+CPLineBorder    = 1;
 CPBezelBorder   = 2;
 CPGrooveBorder  = 3;
 
 @implementation CPBox : CPView
 {
     CPBorderType    _borderType;
-    
+
     CPColor         _borderColor;
     CPColor         _fillColor;
-    
+
     float           _cornerRadius;
     float           _borderWidth;
-    
+
     CPSize          _contentMargin;
     CPView          _contentView;
 }
@@ -50,16 +50,16 @@ CPGrooveBorder  = 3;
     [box setFrameFromContentFrame:[aView frame]];
 
     [enclosingView replaceSubview:aView with:box];
-    
+
     [box setContentView:aView];
-    
+
     return box;
 }
 
 - (id)initWithFrame:(CPRect)frameRect
 {
     self = [super initWithFrame:frameRect];
-    
+
     if (self)
     {
         _fillColor = [CPColor clearColor];
@@ -162,8 +162,8 @@ CPGrooveBorder  = 3;
 
     [aView setFrame:CGRectInset([self bounds], _contentMargin.width + _borderWidth, _contentMargin.height + _borderWidth)];
     [self replaceSubview:_contentView with:aView];
-    
-    _contentView = aView;    
+
+    _contentView = aView;
 }
 
 - (CPSize)contentViewMargins
@@ -175,7 +175,7 @@ CPGrooveBorder  = 3;
 {
      if(size.width < 0 || size.height < 0)
          [CPException raise:CPGenericException reason:@"Margins must be positive"];
-         
+
     _contentMargin = CGSizeMakeCopy(size);
     [self setNeedsDisplay:YES];
 }
@@ -189,10 +189,10 @@ CPGrooveBorder  = 3;
 - (void)sizeToFit
 {
     var contentFrame = [_contentView frame];
-    
-    [self setFrameSize:CGSizeMake(contentFrame.size.width + _contentMargin.width * 2, 
+
+    [self setFrameSize:CGSizeMake(contentFrame.size.width + _contentMargin.width * 2,
                                   contentFrame.size.height + _contentMargin.height * 2)];
-    
+
     [_contentView setFrameOrigin:CGPointMake(_contentMargin.width, _contentMargin.height)];
 }
 
@@ -202,14 +202,14 @@ CPGrooveBorder  = 3;
         aContext = [[CPGraphicsContext currentContext] graphicsPort],
         border2 = _borderWidth/2,
 
-        strokeRect = CGRectMake(bounds.origin.x + border2, 
-                                bounds.origin.y + border2, 
-                                bounds.size.width - _borderWidth, 
+        strokeRect = CGRectMake(bounds.origin.x + border2,
+                                bounds.origin.y + border2,
+                                bounds.size.width - _borderWidth,
                                 bounds.size.height - _borderWidth),
-                                
-        fillRect = CGRectMake(bounds.origin.x + border2, 
-                              bounds.origin.y + border2, 
-                              bounds.size.width - _borderWidth, 
+
+        fillRect = CGRectMake(bounds.origin.x + border2,
+                              bounds.origin.y + border2,
+                              bounds.size.width - _borderWidth,
                               bounds.size.height - _borderWidth);
 
     CGContextSetFillColor(aContext, [self fillColor]);
@@ -239,6 +239,48 @@ CPGrooveBorder  = 3;
 
         default:            break;
     }
+}
+
+@end
+
+@implementation CPBox (CPCoding)
+
+- (id)initWithCoder:(CPCoder)aCoder
+{
+    self = [super initWithCoder:aCoder];
+
+    if (self)
+    {
+        _contentView = [[CPView alloc] initWithFrame:[self bounds]];
+
+        [self setContentViewMargins:([aCoder decodeObjectForKey:@"CPBoxContentViewMarginKey"] || CGSizeMake(0.0, 0.0))];
+        [self setContentView:       ([aCoder decodeObjectForKey:@"CPBoxContentViewKey"] || _contentView)];
+        [self setFillColor:         ([aCoder decodeObjectForKey:@"CPBoxFillColorKey"] || [CPColor clearColor])];
+        [self setBorderColor:       ([aCoder decodeObjectForKey:@"CPBoxBorderColorKey"] || [CPColor blackColor])];
+        [self setCornerRadius:      [aCoder decodeFloatForKey:@"CPBoxCornerRadiusKey"]];
+        [self setBorderWidth:       [aCoder decodeFloatForKey:@"CPBoxBorderWidthKey"]];
+        [self setBorderType:        [aCoder decodeIntForKey:@"CPBoxBorderTypeKey"]];
+
+        [self addSubview:_contentView];
+
+        [self setNeedsLayout];
+        [self setNeedsDisplay:YES];
+    }
+
+    return self;
+}
+
+- (void)encodeWithCoder:(CPCoder)aCoder
+{
+    [super encodeWithCoder:aCoder];
+
+    [aCoder encodeObject:_contentMargin forKey:@"CPBoxContentViewMarginKey"];
+    [aCoder encodeObject:_fillColor     forKey:@"CPBoxFillColorKey"];
+    [aCoder encodeObject:_borderColor   forKey:@"CPBoxBorderColorKey"];
+    [aCoder encodeFloat:_cornerRadius   forKey:@"CPBoxCornerRadiusKey"];
+    [aCoder encodeFloat:_borderWidth    forKey:@"CPBoxBorderWidthKey"];
+    [aCoder encodeInt:_borderType       forKey:@"CPBoxBorderTypeKey"];
+    [aCoder encodeConditionalObject:_contentView   forKey:@"CPBoxContentViewKey"];
 }
 
 @end
