@@ -261,6 +261,7 @@ CPGrooveBorder  = 3;
         [self setBorderWidth:       [aCoder decodeFloatForKey:@"CPBoxBorderWidthKey"]];
         [self setBorderType:        [aCoder decodeIntForKey:@"CPBoxBorderTypeKey"]];
 
+        [_contentView setAutoresizingMask:CPViewWidthSizable | CPViewHeightSizable];
         [self addSubview:_contentView];
 
         [self setNeedsLayout];
